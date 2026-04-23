@@ -1004,10 +1004,12 @@ export default function AdminDashboard() {
                   <table className="w-full text-left">
                     <thead>
                       <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">
-                        <th className="p-5">Identitas & ID Pengguna</th>
-                        <th className="p-5">Akses Kontak</th>
-                        <th className="p-5 text-center">Status</th>
-                        <th className="p-5 text-right">Aksi Kontrol</th>
+                        <th className="p-5">Nama & ID</th>
+                        <th className="p-5">Email</th>
+                        <th className="p-5">Nomor Telepon</th>
+                        <th className="p-5 text-right">Saldo</th>
+                        <th className="p-5 text-center">Status Akun</th>
+                        <th className="p-5 text-right">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50 text-xs">
@@ -1026,14 +1028,16 @@ export default function AdminDashboard() {
                                 </div>
                                 <div>
                                   <p className="font-bold text-slate-900 mb-0.5">{u.name}</p>
-                                  <code className="text-[9px] text-slate-400 font-mono tracking-tighter">UID: {u.id?.slice(0, 16)}...</code>
+                                  <code className="text-[9px] text-slate-400 font-mono tracking-tighter">ID: {u.id?.slice(0, 8)}...</code>
                                 </div>
                               </div>
                             </td>
+                            <td className="p-5 text-slate-600 font-medium">
+                               {u.email}
+                            </td>
                             <td className="p-5">
-                               <p className="text-slate-600 font-medium mb-1">{u.email}</p>
-                               <div className="flex items-center gap-2">
-                                  <span className="text-[10px] text-slate-400 font-bold">{u.phone || 'NO PHONE'}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-slate-600 font-medium">{u.phone || '-'}</span>
                                   {u.phone && (
                                     <a 
                                       href={`https://wa.me/${u.phone.replace(/\D/g, '')}`} 
@@ -1041,29 +1045,32 @@ export default function AdminDashboard() {
                                       rel="noreferrer"
                                       className="text-[9px] font-black text-green-600 uppercase tracking-widest hover:underline"
                                     >
-                                      Chat WA
+                                      Chat
                                     </a>
                                   )}
-                               </div>
+                                </div>
+                            </td>
+                            <td className="p-5 text-right font-black text-indigo-600">
+                               {formatCurrency(u.balance || 0)}
                             </td>
                             <td className="p-5 text-center">
                                {u.isBlocked ? (
-                                 <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-50 text-red-600 border border-red-100">Blocked</span>
+                                 <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-50 text-red-600 border border-red-100">TERBLOKIR</span>
                                ) : (
-                                 <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-50 text-green-600 border border-green-100">Active</span>
+                                 <span className="px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-50 text-green-600 border border-green-100">AKTIF</span>
                                )}
                             </td>
                             <td className="p-5 text-right">
                                 <button
                                   onClick={() => handleBlockUser(u.id, u.name, !u.isBlocked)}
                                   className={cn(
-                                    "px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all shadow-sm",
+                                    "px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all shadow-sm",
                                     u.isBlocked 
                                       ? "bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-100" 
                                       : "bg-red-50 text-red-600 hover:bg-red-600 hover:text-white border border-red-200"
                                   )}
                                 >
-                                  {u.isBlocked ? 'Buka Blokir' : 'Blokir User'}
+                                  {u.isBlocked ? 'Unblock' : 'Block'}
                                 </button>
                             </td>
                           </tr>
