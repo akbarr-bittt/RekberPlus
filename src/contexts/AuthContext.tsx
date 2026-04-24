@@ -18,6 +18,9 @@ interface UserProfile {
   role?: 'user' | 'admin' | 'owner';
   isBlocked?: boolean;
   blockedReason?: string;
+  hasAgreedToTOS?: boolean;
+  termsAgreedAt?: any;
+  bio?: string;
   createdAt: any;
 }
 

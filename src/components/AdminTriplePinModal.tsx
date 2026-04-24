@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { ShieldAlert } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import PinPad from './PinPad';
 
@@ -29,12 +30,11 @@ export default function AdminTriplePinModal({ isOpen, onClose, onSuccess }: Admi
   }, [isOpen]);
 
   useEffect(() => {
-    // Session timeout logic
     if (!isOpen || isLocked) return;
     
     const interval = setInterval(() => {
       const now = Date.now();
-      if (step > 1 && now - lastInteraction > 30000) { // 30 seconds timeout
+      if (step > 1 && now - lastInteraction > 30000) {
         setStep(1);
         setError('Sesi habis (30 detik). Silakan ulangi dari awal.');
       }
@@ -44,7 +44,6 @@ export default function AdminTriplePinModal({ isOpen, onClose, onSuccess }: Admi
   }, [isOpen, step, lastInteraction, isLocked]);
   
   useEffect(() => {
-    // Lock logic
     if (lockedUntil && Date.now() < lockedUntil) {
       const remainingMinutes = Math.ceil((lockedUntil - Date.now()) / 60000);
       setIsLocked(true);
@@ -61,38 +60,19 @@ export default function AdminTriplePinModal({ isOpen, onClose, onSuccess }: Admi
     }
   }, [lockedUntil]);
 
-  const resetAll = useCallback(() => {
-    setStep(1);
-  }, []);
-
-  if (!isOpen) return null;
-
-  if (!profile?.pin) {
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-        <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-center">
-          <h3 className="text-lg font-bold text-gray-900 mb-2">PIN Belum Diatur</h3>
-          <p className="text-gray-600 mb-6">Anda harus mengatur PIN keamanan di menu Profil sebelum dapat melakukan konfirmasi top-up.</p>
-          <button onClick={onClose} className="btn-primary w-full">Tutup</button>
-        </div>
-      </div>
-    );
-  }
-
   const handleComplete = async (pin: string) => {
     if (isLocked) return;
     
     setIsLoading(true);
     setLastInteraction(Date.now());
     setTimeout(async () => {
-      if (pin === profile.pin) {
+      if (pin === profile?.pin) {
         setError(null);
         if (step === 1) {
           setStep(2);
         } else if (step === 2) {
           setStep(3);
         } else {
-          // step 3 success
           setAttempts(0);
           setStep(1);
           try {
@@ -107,12 +87,10 @@ export default function AdminTriplePinModal({ isOpen, onClose, onSuccess }: Admi
         setAttempts(newAttempts);
         
         if (newAttempts >= 5) {
-          // Lock for 15 minutes
           const until = Date.now() + 15 * 60000;
           setLockedUntil(until);
           setIsLocked(true);
         } else {
-          // Reset to step 1 if wrong on any step except 1
           if (step > 1) {
             setStep(1);
             setError(`PIN salah. Verifikasi diulang dari awal. Sisa percobaan: ${5 - newAttempts}`);
@@ -125,22 +103,41 @@ export default function AdminTriplePinModal({ isOpen, onClose, onSuccess }: Admi
     }, 400);
   };
 
+  if (!isOpen) return null;
+
+  if (!profile?.pin) {
+    return (
+      <div className="fixed inset-0 bg-slate-950/80 flex items-center justify-center z-[110] p-4 backdrop-blur-sm">
+        <div className="bg-white p-8 rounded-[32px] max-w-sm w-full text-center shadow-2xl border border-divider">
+          <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-3xl flex items-center justify-center mx-auto mb-6">
+             <ShieldAlert className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-black text-gray-900 mb-2 uppercase tracking-tight">Otoritas Terbatas</h3>
+          <p className="text-xs text-gray-500 font-medium mb-8 leading-relaxed px-4">Anda harus mengatur PIN keamanan admin sebelum dapat melakukan tindakan tingkat tinggi.</p>
+          <button onClick={onClose} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all">
+             Tutup
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 bg-slate-950/80 flex items-center justify-center z-[110] p-4 backdrop-blur-md animate-in fade-in duration-300">
       <div className="flex flex-col items-center w-full max-w-sm">
         <PinPad 
           // @ts-ignore
-          key={step} // Force re-render of PinPad on step change to clear its internal state
-          title={`Verifikasi PIN Admin`}
-          subtitle={`Masukkan PIN Admin (${step}/3)`}
+          key={step} 
+          title={`OTORITAS ${step}/3`}
+          subtitle={`Masukkan PIN Admin untuk Konfirmasi`}
           onComplete={handleComplete}
           error={error}
           onClose={onClose}
           isLoading={isLoading || isLocked}
         />
         {isLocked && (
-          <div className="bg-red-50 text-red-600 p-4 rounded-xl mt-4 max-w-sm text-center text-sm font-medium">
-            Akses dikunci sementara karena percobaan gagal berulang kali.
+          <div className="bg-red-50 text-red-600 p-5 rounded-2xl mt-8 max-w-sm text-center text-[10px] font-black uppercase tracking-[0.2em] border border-red-100 shadow-xl shadow-red-50 animate-shake">
+            KEAMANAN BERLAPIS: AKSES TERKUNCI
           </div>
         )}
       </div>

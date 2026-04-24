@@ -5,16 +5,12 @@ import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, handleFirestoreError, OperationType } from '../lib/utils';
 import { PlusCircle, Search, ArrowRight, Clock, ShieldCheck, AlertCircle, CheckCircle2 } from 'lucide-react';
-import BalanceModal from '../components/BalanceModal';
 import IssueReportModal from '../components/IssueReportModal';
 
 export default function Dashboard() {
   const { profile, user } = useAuth();
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [withdrawals, setWithdrawals] = useState<any[]>([]);
-  const prevWithdrawalsRef = useRef<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalType, setModalType] = useState<'withdraw' | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
 
   useEffect(() => {
@@ -38,34 +34,8 @@ export default function Dashboard() {
       handleFirestoreError(error, OperationType.LIST, 'transactions', { currentUser: user });
     });
 
-    const qWithdrawals = query(
-      collection(db, 'withdrawals'),
-      where('userId', '==', user.uid)
-    );
-
-    const unsubscribeWithdrawals = onSnapshot(qWithdrawals, (snapshot) => {
-      const ws = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
-      ws.sort((a: any, b: any) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
-      
-      const prev = prevWithdrawalsRef.current;
-      if (prev.length > 0) {
-        ws.forEach(newW => {
-          const oldW = prev.find((p: any) => p.id === newW.id);
-          if (oldW && oldW.status !== 'SUCCESS' && newW.status === 'SUCCESS') {
-            alert('Penarikan dana berhasil dikonfirmasi');
-          }
-        });
-      }
-      prevWithdrawalsRef.current = ws;
-      
-      setWithdrawals(ws);
-    }, (error) => {
-      console.error(error);
-    });
-
     return () => {
       unsubscribe();
-      unsubscribeWithdrawals();
     };
   }, [user]);
 
@@ -74,6 +44,7 @@ export default function Dashboard() {
       case 'waiting_payment': return { color: 'text-orange-600 bg-orange-50', icon: Clock, label: 'MENUNGGU PEMBAYARAN' };
       case 'waiting_payment_confirmation': return { color: 'text-blue-600 bg-blue-50', icon: Clock, label: 'VERIFIKASI MANUAL' };
       case 'funds_held': return { color: 'text-green-600 bg-green-50', icon: ShieldCheck, label: 'DANA DITAHAN' };
+      case 'TERM_ESCROW_ACTIVE': return { color: 'text-indigo-600 bg-indigo-50', icon: ShieldCheck, label: 'ESCROW BERJANGKA AKTIF' };
       case 'processing': return { color: 'text-purple-600 bg-purple-50', icon: Clock, label: 'SEDANG DIPROSES' };
       case 'shipped': return { color: 'text-indigo-600 bg-indigo-50', icon: ArrowRight, label: 'PESANAN DIKIRIM' };
       case 'completed': return { color: 'text-green-600 bg-green-50', icon: CheckCircle2, label: 'TRANSAKSI SELESAI' };
@@ -83,9 +54,9 @@ export default function Dashboard() {
     }
   };
 
-  const activeTransactions = transactions.filter(t => !['completed', 'cancelled'].includes(t.status));
+  const activeTransactions = transactions.filter(t => !['completed', 'cancelled', 'REFUNDED_TO_BUYER'].includes(t.status));
   const heldFunds = activeTransactions.reduce((acc, curr) => {
-    if (curr.status !== 'waiting_payment' && curr.status !== 'cancelled') {
+    if (['funds_held', 'processing', 'shipped', 'disputed', 'TERM_ESCROW_ACTIVE'].includes(curr.status)) {
       return acc + curr.total;
     }
     return acc;
@@ -108,30 +79,22 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Balance Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-        <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-lg overflow-hidden">
-          <p className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1">Saldo Pengembalian</p>
-          <h2 className="text-2xl md:text-3xl font-bold break-words">{formatCurrency(profile?.balance || 0)}</h2>
-          <div className="mt-4 flex gap-2 flex-wrap">
-            <button 
-              onClick={() => setModalType('withdraw')}
-              disabled={!profile?.balance || profile.balance <= 0}
-              className="bg-white/20 hover:bg-white/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] px-4 py-2 rounded-lg text-sm font-bold h-10 flex items-center justify-center min-w-[80px]"
-            >
-              Tarik Saldo
-            </button>
+      {/* Escrow Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-1 gap-4 mb-8">
+        <div className="bg-blue-600 rounded-2xl p-6 text-white shadow-lg overflow-hidden relative">
+          <div className="absolute top-0 right-0 p-8 opacity-10">
+             <ShieldCheck className="w-32 h-32" />
           </div>
-        </div>
-        <div className="bg-white border border-divider rounded-2xl p-6 shadow-sm overflow-hidden">
-          <div className="flex items-center gap-2 text-gray-500 text-[10px] font-black uppercase tracking-widest mb-1">
-            <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
-            <span className="truncate tracking-widest">Dana Ditahan (Aktif)</span>
-          </div>
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 break-words">{formatCurrency(heldFunds)}</h2>
-          <p className="text-[10px] uppercase font-bold text-gray-400 mt-4 truncate tracking-tighter">
-            PROSES: {activeTransactions.length} TRANSAKSI
+          <p className="text-blue-100 text-[10px] font-black uppercase tracking-widest mb-1 relative z-10 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4" /> Total Dana Dalam Pengamanan Escrow
           </p>
+          <h2 className="text-3xl md:text-4xl font-bold break-words relative z-10 mt-2">{formatCurrency(heldFunds)}</h2>
+          <div className="mt-4 flex gap-2 flex-wrap relative z-10">
+             <div className="bg-white/20 px-4 py-2 rounded-lg text-xs font-bold flex flex-col justify-center min-w-[120px]">
+                <span className="text-blue-100 text-[9px] uppercase tracking-widest">Transaksi Berjalan</span>
+                <span>{activeTransactions.length} Transaksi</span>
+             </div>
+          </div>
         </div>
       </div>
 
@@ -156,7 +119,7 @@ export default function Dashboard() {
          <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200 shrink-0">
             <ShieldCheck className="w-5 h-5" />
          </div>
-         <p className="text-xs font-bold text-indigo-700 leading-snug tracking-tight">Dana Anda diamankan oleh sistem kami hingga transaksi selesai dan dikonfirmasi.</p>
+         <p className="text-xs font-bold text-indigo-700 leading-snug tracking-tight">Dana diamankan sepenuhnya oleh sistem escrow kami. Tidak menggunakan saldo internal sehingga lebih aman dan terpercaya.</p>
       </div>
 
       {/* Recent Transactions */}
@@ -214,11 +177,6 @@ export default function Dashboard() {
           </div>
         )}
       </div>
-
-      <BalanceModal 
-        isOpen={modalType !== null} 
-        onClose={() => setModalType(null)} 
-      />
 
       <IssueReportModal 
         isOpen={showReportModal}

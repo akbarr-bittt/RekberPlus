@@ -16,6 +16,8 @@ import Layout from './components/Layout';
 import AdminLayout from './components/AdminLayout';
 import AppLockScreen from './components/AppLockScreen';
 import BlockedScreen from './pages/BlockedScreen';
+import TOSModal from './components/TOSModal';
+import ProfileCompletionModal from './components/ProfileCompletionModal';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -32,7 +34,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <BlockedScreen />;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <TOSModal />
+      <ProfileCompletionModal />
+      {children}
+    </>
+  );
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {

@@ -1,15 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { formatCurrency } from '../lib/utils';
-import { LogOut, User as UserIcon, ShieldCheck, CreditCard, Settings } from 'lucide-react';
-import BalanceModal from '../components/BalanceModal';
+import { LogOut, User as UserIcon, ShieldCheck, Settings } from 'lucide-react';
 import { EditProfileModal, SecurityModal, SettingsModal } from '../components/ProfileModals';
 
 export default function Profile() {
   const { profile, signOut } = useAuth();
   const navigate = useNavigate();
-  const [modalType, setModalType] = useState<'withdraw' | null>(null);
   const [activeModal, setActiveModal] = useState<'edit' | 'security' | 'settings' | null>(null);
 
   const handleSignOut = async () => {
@@ -42,23 +39,6 @@ export default function Profile() {
               <p className="text-gray-700 text-sm italic">"{profile.bio}"</p>
             </div>
           )}
-        </div>
-
-        {/* Balance Summary */}
-        <div className="bg-blue-600 p-6 rounded-2xl text-white shadow-lg overflow-hidden relative">
-          <div className="flex items-center gap-2 text-blue-100 mb-2">
-            <CreditCard className="w-5 h-5 flex-shrink-0" />
-            <span className="font-bold text-[10px] uppercase tracking-widest">Saldo Rekbrio</span>
-          </div>
-          <h3 className="text-2xl md:text-3xl font-black mb-6 break-words tracking-tighter leading-tight">{formatCurrency(profile?.balance || 0)}</h3>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setModalType('withdraw')}
-              className="flex-1 min-w-[120px] bg-white text-blue-600 font-black py-3 rounded-xl hover:bg-blue-50 transition-all active:scale-95 shadow-sm text-xs uppercase"
-            >
-              Tarik Dana
-            </button>
-          </div>
         </div>
 
         {/* Menu Items */}
@@ -113,11 +93,6 @@ export default function Profile() {
         </button>
 
       </div>
-
-      <BalanceModal 
-        isOpen={modalType !== null} 
-        onClose={() => setModalType(null)} 
-      />
 
       <EditProfileModal isOpen={activeModal === 'edit'} onClose={() => setActiveModal(null)} />
       <SecurityModal isOpen={activeModal === 'security'} onClose={() => setActiveModal(null)} />

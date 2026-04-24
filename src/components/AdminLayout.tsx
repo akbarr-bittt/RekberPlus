@@ -24,7 +24,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [txBadgeCount, setTxBadgeCount] = useState(0);
-  const [financeBadgeCount, setFinanceBadgeCount] = useState(0);
+  const [disputeBadgeCount, setDisputeBadgeCount] = useState(0);
 
   useEffect(() => {
     // New Transactions Badge (Waiting Confirmation)
@@ -36,25 +36,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       setTxBadgeCount(snapshot.size);
     });
 
-    // Finance Badge (Pending Withdrawals)
-    const qWithdrawal = query(
-      collection(db, 'withdrawals'),
-      where('status', '==', 'PENDING')
+    // Disputed Transactions Badge
+    const qDispute = query(
+      collection(db, 'transactions'),
+      where('status', '==', 'disputed')
     );
-    const unsubWithdrawal = onSnapshot(qWithdrawal, (snapshot) => {
-      setFinanceBadgeCount(snapshot.size);
+    const unsubDispute = onSnapshot(qDispute, (snapshot) => {
+      setDisputeBadgeCount(snapshot.size);
     });
 
     return () => {
       unsubTx();
-      unsubWithdrawal();
+      unsubDispute();
     };
   }, []);
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Ringkasan', path: '/admin', id: 'dashboard' },
     { icon: ArrowLeftRight, label: 'Transaksi', path: '/admin?tab=transactions', id: 'transactions', badge: txBadgeCount },
-    { icon: Wallet, label: 'Penarikan', path: '/admin?tab=finance', id: 'finance', badge: financeBadgeCount },
     { icon: Users, label: 'Pengguna', path: '/admin?tab=users', id: 'users' },
     { icon: Settings, label: 'Pengaturan', path: '/admin?tab=settings', id: 'settings' },
   ];

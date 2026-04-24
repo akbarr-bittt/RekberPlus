@@ -16,10 +16,13 @@ const getStatusColor = (status: string) => {
     case 'waiting_payment': return 'bg-orange-100 text-orange-800';
     case 'waiting_payment_confirmation': return 'bg-yellow-100 text-yellow-800 animate-pulse border border-yellow-300';
     case 'funds_held': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+    case 'TERM_ESCROW_ACTIVE': return 'bg-indigo-100 text-indigo-800 border-indigo-200';
     case 'processing': return 'bg-purple-100 text-purple-800';
     case 'shipped': return 'bg-indigo-100 text-indigo-800';
-    case 'completed': return 'bg-blue-100 text-blue-800';
+    case 'completed': 
+    case 'RELEASED_TO_SELLER': return 'bg-blue-100 text-blue-800';
     case 'cancelled': return 'bg-red-100 text-red-800';
+    case 'disputed': return 'bg-red-600 text-white font-black animate-pulse';
     case 'REFUNDED_TO_BUYER': return 'bg-orange-600 text-white font-bold';
     // Penarikan / Status Umum
     case 'PENDING': return 'bg-orange-50 text-orange-600 border-orange-100';
@@ -35,14 +38,19 @@ const getStatusLabel = (status: string) => {
     case 'waiting_payment': return 'MENUNGGU PEMBAYARAN';
     case 'waiting_payment_confirmation': return 'VERIFIKASI MANUAL';
     case 'funds_held': return 'DANA DITAHAN';
+    case 'TERM_ESCROW_ACTIVE': return 'ESCROW BERJANGKA AKTIF';
     case 'processing': return 'SEDANG DIPROSES';
     case 'shipped': return 'PESANAN DIKIRIM';
     case 'completed': return 'TRANSAKSI SELESAI';
+    case 'RELEASED_TO_SELLER': return 'DANA DIKIRIM KE PENJUAL';
     case 'cancelled': return 'DIBATALKAN';
-    case 'REFUNDED_TO_BUYER': return 'DANA DIKEMBALIKAN';
+    case 'disputed': return 'DALAM SENGKETA / KOMPLAIN';
+    case 'REFUNDED_TO_BUYER': return 'DANA DIKEMBALIKAN KE PEMBELI';
     default: return status;
   }
 };
+
+const TERMINAL_STATUSES = ['completed', 'RELEASED_TO_SELLER', 'REFUNDED_TO_BUYER', 'cancelled'];
 
 const getWithdrawStatusLabel = (status: string) => {
   switch (status) {
@@ -69,7 +77,7 @@ export default function AdminDashboard() {
   const [platformProfits, setPlatformProfits] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'users' | 'withdrawals' | 'finance' | 'settings' | 'resolutions' | 'rekap'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions' | 'users' | 'withdrawals' | 'finance' | 'settings' | 'rekap'>('dashboard');
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -106,6 +114,7 @@ export default function AdminDashboard() {
   
   const [adminPhone, setAdminPhone] = useState('+6281234567890');
   const [platformFee, setPlatformFee] = useState(2);
+  const [securityFeePerDay, setSecurityFeePerDay] = useState(5000);
   const [platformBankName, setPlatformBankName] = useState('');
   const [platformAccountNumber, setPlatformAccountNumber] = useState('');
   const [platformAccountHolder, setPlatformAccountHolder] = useState('');
@@ -156,6 +165,7 @@ export default function AdminDashboard() {
         const data = docSnap.data();
         if (data.adminPhone) setAdminPhone(data.adminPhone);
         if (data.platformFee !== undefined) setPlatformFee(data.platformFee);
+        if (data.securityFeePerDay !== undefined) setSecurityFeePerDay(data.securityFeePerDay);
         if (data.platform_bank_name) setPlatformBankName(data.platform_bank_name);
         if (data.platform_account_number) setPlatformAccountNumber(data.platform_account_number);
         if (data.platform_account_holder) setPlatformAccountHolder(data.platform_account_holder);
@@ -189,6 +199,11 @@ export default function AdminDashboard() {
   };
 
   const handleUpdateStatus = async (txId: string, newStatus: string) => {
+    const tx = transactions.find(t => t.id === txId);
+    if (tx && TERMINAL_STATUSES.includes(tx.status)) {
+      alert("Transaksi sudah selesai/dibatalkan. Status tidak dapat diubah lagi.");
+      return;
+    }
     if (!confirm(`Ubah status transaksi ini menjadi ${newStatus}?`)) return;
     try {
       await updateDoc(doc(db, 'transactions', txId), { status: newStatus });
@@ -260,6 +275,7 @@ export default function AdminDashboard() {
       await setDoc(doc(db, 'settings', 'global'), {
         adminPhone,
         platformFee: Number(platformFee),
+        securityFeePerDay: Number(securityFeePerDay),
         platform_bank_name: platformBankName,
         platform_account_number: platformAccountNumber,
         platform_account_holder: platformAccountHolder
@@ -427,16 +443,28 @@ export default function AdminDashboard() {
       const txRef = doc(db, 'transactions', pendingTransactionConfirm.id);
       
       let nextStatus = pendingTransactionConfirm.status;
-      if (pendingTransactionConfirm.status === 'waiting_payment' || pendingTransactionConfirm.status === 'waiting_payment_confirmation') {
-        nextStatus = 'funds_held';
-      }
-
-      await updateDoc(txRef, {
+      const isTermed = pendingTransactionConfirm.isEscrowBerjangka;
+      const durationDays = pendingTransactionConfirm.escrowDuration || 7;
+      let updateData: any = {
         adminConfirmed: true,
         adminConfirmedAt: Timestamp.now(),
         adminConfirmedBy: user?.uid,
-        status: nextStatus
-      });
+      };
+
+      if (pendingTransactionConfirm.status === 'waiting_payment' || pendingTransactionConfirm.status === 'waiting_payment_confirmation') {
+        if (isTermed) {
+          nextStatus = 'TERM_ESCROW_ACTIVE';
+          const releaseDate = new Date();
+          releaseDate.setDate(releaseDate.getDate() + durationDays);
+          updateData.escrowReleaseDate = Timestamp.fromDate(releaseDate);
+        } else {
+          nextStatus = 'funds_held';
+        }
+      }
+      
+      updateData.status = nextStatus;
+
+      await updateDoc(txRef, updateData);
 
       // Audit Log
       await addDoc(collection(db, 'system_logs'), {
@@ -471,6 +499,11 @@ export default function AdminDashboard() {
   };
 
   const handleUpdateStatusAdmin = async (txId: string, newStatus: string) => {
+    const tx = transactions.find(t => t.id === txId);
+    if (tx && TERMINAL_STATUSES.includes(tx.status)) {
+      alert("FATAL: Transaksi ini sudah terkunci (terminal state). Gunakan resolusi manual jika diperlukan.");
+      return;
+    }
     if (!window.confirm(`Ganti status transaksi ke "${newStatus}"?`)) return;
     try {
       await updateDoc(doc(db, 'transactions', txId), {
@@ -535,140 +568,74 @@ export default function AdminDashboard() {
     setShowTriplePinModal(true);
   };
 
-  const executeResolutionTransfer = async () => {
+  const processPostPinResolution = () => {
     if (!pendingResolution) return;
     const { tx, target } = pendingResolution;
     
-    if (target === 'buyer') {
-      setPostPinRefundData(tx);
-      setPendingResolution(null);
-      return;
-    }
-
-    const targetUserId = tx.sellerId;
-    if (!targetUserId) {
-      alert("Seller ID tidak ditemukan!");
-      setPendingResolution(null);
-      return;
-    }
-
-    try {
-      await runTransaction(db, async (transaction) => {
-        const txDocRef = doc(db, 'transactions', tx.id);
-        const userDocRef = doc(db, 'users', targetUserId);
-        const ledgerDrRef = doc(collection(db, 'ledgers'));
-        const ledgerCrRef = doc(collection(db, 'ledgers'));
-
-        const txSnap = await transaction.get(txDocRef);
-        if (!txSnap.exists()) throw new Error("Transaksi tidak ditemukan");
-        const txData = txSnap.data();
-        if (txData.status === 'completed' || txData.status === 'REFUNDED_TO_BUYER') {
-          throw new Error("Transaksi sudah selesai.");
-        }
-
-        transaction.update(txDocRef, {
-          status: 'completed',
-          resolution: 'seller',
-          resolvedAt: Timestamp.now(),
-          resolvedBy: user?.uid,
-          updatedAt: Timestamp.now()
-        });
-
-        transaction.update(userDocRef, {
-          balance: increment(tx.price)
-        });
-
-        transaction.set(ledgerDrRef, {
-          userId: 'SYSTEM_ESCROW',
-          type: 'DEBIT',
-          amount: tx.price,
-          reference: tx.id,
-          description: `Escrow Released to Seller (via Admin)`,
-          createdAt: Timestamp.now(),
-          adminId: user?.uid
-        });
-
-        transaction.set(ledgerCrRef, {
-          userId: targetUserId,
-          type: 'CREDIT',
-          amount: tx.price,
-          reference: tx.id,
-          description: `Funds received (Escrow Release ${tx.id})`,
-          createdAt: Timestamp.now(),
-          adminId: user?.uid
-        });
-
-        const auditRef = doc(collection(db, 'system_logs'));
-        transaction.set(auditRef, {
-          action: 'MANUAL_RESOLUTION_TRANSFER',
-          transactionId: tx.id,
-          target,
-          targetUserId,
-          amount: tx.price,
-          adminId: user?.uid,
-          createdAt: Timestamp.now()
-        });
-      });
-      alert('Dana berhasil dikirim ke saldo Penjual.');
-      setResolutionTx(null);
-    } catch (error: any) {
-      console.error(error);
-      alert('Gagal transfer: ' + error.message);
-    } finally {
-      setPendingResolution(null);
-    }
+    // Show the Manual Resolution Detail Panel
+    setPostPinRefundData({ tx, target });
+    setPendingResolution(null);
+    setShowTriplePinModal(false);
   };
 
-  const executeManualRefundToBuyer = async () => {
+  const finalizeResolution = async (reason: string) => {
     if (!postPinRefundData) return;
-    const tx = postPinRefundData;
-    
+    if (!reason.trim()) {
+      alert("Alasan Keputusan Admin wajib diisi!");
+      return;
+    }
+    const { tx, target } = postPinRefundData;
+    const isRefund = target === 'buyer';
+
+    const targetUserId = isRefund ? tx.buyerId : tx.sellerId;
+    if (!targetUserId) {
+      alert("User ID tidak ditemukan!");
+      return;
+    }
+
     try {
       await runTransaction(db, async (transaction) => {
         const txDocRef = doc(db, 'transactions', tx.id);
-        const ledgerDrRef = doc(collection(db, 'ledgers'));
-
         const txSnap = await transaction.get(txDocRef);
         if (!txSnap.exists()) throw new Error("Transaksi tidak ditemukan");
-        const txData = txSnap.data();
-        if (txData.status === 'completed' || txData.status === 'REFUNDED_TO_BUYER') {
-          throw new Error("Sudah selesai.");
+        
+        const txData = txSnap.data() as any;
+        if (txData.status === 'completed' || txData.status === 'RELEASED_TO_SELLER' || txData.status === 'REFUNDED_TO_BUYER') {
+          throw new Error("Sengketa sudah diselesaikan sebelumnya.");
         }
 
+        const newStatus = isRefund ? 'REFUNDED_TO_BUYER' : 'RELEASED_TO_SELLER';
+        const resolutionType = isRefund ? 'buyer' : 'seller';
+
         transaction.update(txDocRef, {
-          status: 'REFUNDED_TO_BUYER',
-          resolution: 'buyer',
+          status: newStatus,
+          resolution: resolutionType,
+          resolutionReason: reason,
+          disputeStatus: 'RESOLVED',
           resolvedAt: Timestamp.now(),
           resolvedBy: user?.uid,
           updatedAt: Timestamp.now(),
-          refundAmount: tx.total
-        });
-
-        transaction.set(ledgerDrRef, {
-          userId: 'SYSTEM_ESCROW',
-          type: 'DEBIT',
-          amount: tx.total,
-          reference: tx.id,
-          description: `Manual Refund to Buyer (Escrow Clearing)`,
-          createdAt: Timestamp.now(),
-          adminId: user?.uid
+          ...(isRefund ? { refundAmount: tx.total } : {})
         });
 
         const auditRef = doc(collection(db, 'system_logs'));
         transaction.set(auditRef, {
-          action: 'MANUAL_REFUND_CONFIRMATION',
+          action: isRefund ? 'MANUAL_RESOLUTION_REFUND' : 'MANUAL_RESOLUTION_TRANSFER',
           transactionId: tx.id,
-          amount: tx.total,
+          target,
+          targetUserId,
+          amount: isRefund ? tx.total : tx.price,
+          reason,
           adminId: user?.uid,
           createdAt: Timestamp.now()
         });
       });
-      alert('Konfirmasi refund berhasil.');
-      setResolutionTx(null);
+
+      alert(isRefund ? 'Dana Berhasil Direfund.' : 'Dana Berhasil Ditransfer. Hubungi user untuk konfirmasi.');
       setPostPinRefundData(null);
     } catch (error: any) {
       console.error(error);
-      alert('Gagal: ' + error.message);
+      alert('Gagal mengeksekusi resolusi: ' + error.message);
     }
   };
 
@@ -1152,6 +1119,7 @@ export default function AdminDashboard() {
                </div>
             </div>
           )}
+
           {activeTab === 'settings' && (
             <div className="space-y-8 max-w-4xl animate-in fade-in slide-in-from-bottom-4 duration-500">
                {isOwner && (
@@ -1220,6 +1188,10 @@ export default function AdminDashboard() {
                           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Platform Multiplier Fee (%)</label>
                           <input type="number" value={platformFee} onChange={e => setPlatformFee(Number(e.target.value))} className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all" placeholder="1" />
                        </div>
+                       <div className="space-y-1">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Security Fee Per Day (Rp)</label>
+                          <input type="number" value={securityFeePerDay} onChange={e => setSecurityFeePerDay(Number(e.target.value))} className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all" placeholder="5000" />
+                       </div>
                     </div>
 
                     <div className="space-y-6">
@@ -1277,7 +1249,7 @@ export default function AdminDashboard() {
         onSuccess={() => {
           if (pendingWithdrawConfirm) executeConfirmWithdraw();
           if (pendingTransactionConfirm) executeConfirmTransaction();
-          if (pendingResolution) executeResolutionTransfer();
+          if (pendingResolution) processPostPinResolution();
         }}
       />
 
@@ -1303,65 +1275,74 @@ export default function AdminDashboard() {
       )}
 
       {postPinRefundData && (
-        <ManualRefundModal 
-          tx={postPinRefundData} 
-          buyer={usersList.find(u => u.id === postPinRefundData.buyerId)}
+        <ManualResolutionModal 
+          tx={postPinRefundData.tx} 
+          targetUser={usersList.find(u => u.id === (postPinRefundData.target === 'buyer' ? postPinRefundData.tx.buyerId : postPinRefundData.tx.sellerId))}
+          targetRole={postPinRefundData.target}
           onClose={() => setPostPinRefundData(null)}
-          onConfirm={executeManualRefundToBuyer}
+          onConfirm={finalizeResolution}
         />
       )}
 
       {/* Blocking Confirmation Modal */}
       {pendingBlockUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in duration-300">
-            <div className={`p-8 text-center ${pendingBlockUser.isBlocked ? 'bg-red-50' : 'bg-green-50'}`}>
-              <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg ${pendingBlockUser.isBlocked ? 'bg-red-600 text-white shadow-red-100' : 'bg-green-600 text-white shadow-green-100'}`}>
-                {pendingBlockUser.isBlocked ? <Ban className="w-10 h-10 animate-pulse" /> : <Power className="w-10 h-10" />}
-              </div>
-              <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight mb-2">
-                {pendingBlockUser.isBlocked ? 'KONFIRMASI BLOKIR' : 'BUKA BLOKIR USER'}
-              </h3>
-              <p className="text-sm text-gray-500 font-medium px-4">
-                {pendingBlockUser.isBlocked 
-                  ? `Apakah Anda yakin ingin memblokir akses user "${pendingBlockUser.name}"?` 
-                  : `User "${pendingBlockUser.name}" akan dapat mengakses platform kembali.`}
-              </p>
+          <div className="bg-white rounded-[32px] w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in duration-300 flex flex-col max-h-[85vh]">
+            <div className="p-4 border-b border-divider flex justify-end bg-slate-50 sticky top-0 z-10 shrink-0">
+              <button onClick={() => setPendingBlockUser(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
             </div>
             
-            <div className="p-8 space-y-6">
-              {pendingBlockUser.isBlocked && (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">ALASAN PEMBLOKIRAN (OPSIONAL)</label>
-                  <textarea
-                    value={blockReason}
-                    onChange={(e) => setBlockReason(e.target.value)}
-                    placeholder="Contoh: Indikasi penipuan, pelanggaran TOS..."
-                    className="w-full px-5 py-4 bg-gray-50 border border-divider rounded-2xl text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-600 outline-none transition-all resize-none h-24 font-medium"
-                  />
+            <div className="overflow-y-auto p-8 custom-scrollbar">
+              <div className="text-center">
+                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg ${pendingBlockUser.isBlocked ? 'bg-red-600 text-white shadow-red-100' : 'bg-green-600 text-white shadow-green-100'}`}>
+                  {pendingBlockUser.isBlocked ? <Ban className="w-8 h-8" /> : <Power className="w-8 h-8" />}
                 </div>
-              )}
+                <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight mb-2">
+                  {pendingBlockUser.isBlocked ? 'KONFIRMASI BLOKIR' : 'BUKA BLOKIR'}
+                </h3>
+                <p className="text-xs text-gray-500 font-medium mb-6">
+                  {pendingBlockUser.isBlocked 
+                    ? `Blokir akses user "${pendingBlockUser.name}"?` 
+                    : `Aktifkan kembali user "${pendingBlockUser.name}".`}
+                </p>
+              </div>
+              
+              <div className="space-y-6">
+                {pendingBlockUser.isBlocked && (
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] ml-1">ALASAN</label>
+                    <textarea
+                      value={blockReason}
+                      onChange={(e) => setBlockReason(e.target.value)}
+                      placeholder="Indikasi penipuan..."
+                      className="w-full px-4 py-3 bg-gray-50 border border-divider rounded-xl text-xs focus:ring-2 focus:ring-red-500/20 outline-none transition-all resize-none h-20 font-medium"
+                    />
+                  </div>
+                )}
 
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={() => setPendingBlockUser(null)}
-                  className="py-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all"
-                >
-                  BATAL
-                </button>
-                <button
-                  onClick={executeBlockUser}
-                  className={`py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all text-white shadow-lg active:scale-95 ${
-                    pendingBlockUser.isBlocked ? 'bg-red-600 hover:bg-red-700 shadow-red-100' : 'bg-green-600 hover:bg-green-700 shadow-green-100'
-                  }`}
-                >
-                  {pendingBlockUser.isBlocked ? 'YA, BLOKIR' : 'YA, BUKA'}
-                </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setPendingBlockUser(null)}
+                    className="py-3.5 bg-gray-100 text-gray-600 rounded-xl font-black text-[10px] uppercase tracking-widest"
+                  >
+                    BATAL
+                  </button>
+                  <button
+                    onClick={executeBlockUser}
+                    className={`py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest text-white shadow-lg active:scale-95 ${
+                      pendingBlockUser.isBlocked ? 'bg-red-600 hover:bg-red-700 shadow-red-100' : 'bg-green-600 hover:bg-green-700 shadow-green-100'
+                    }`}
+                  >
+                    {pendingBlockUser.isBlocked ? 'YA, BLOKIR' : 'YA, BUKA'}
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="p-4 border-t border-gray-100 bg-gray-50/50 text-center">
-              <p className="text-[9px] text-gray-400 font-black uppercase tracking-[0.3em]">SISTEM PERLINDUNGAN REKBRIO</p>
+            <div className="p-3 border-t border-gray-100 bg-gray-50/50 text-center shrink-0">
+              <p className="text-[8px] text-gray-400 font-black uppercase tracking-widest">SISTEM PERLINDUNGAN</p>
             </div>
           </div>
         </div>
@@ -1386,8 +1367,8 @@ function TransactionDetailModal({ tx, onClose, onConfirmPayment, onRefund, onRel
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="bg-white rounded-[32px] w-full max-w-xl overflow-hidden shadow-2xl border border-divider flex flex-col max-h-[85%]">
-        <div className="p-6 border-b border-divider flex justify-between items-center bg-slate-50 shrink-0">
+      <div className="bg-white rounded-[32px] w-full max-w-lg md:max-w-xl overflow-hidden shadow-2xl border border-divider flex flex-col max-h-[85vh]">
+        <div className="p-6 border-b border-divider flex justify-between items-center bg-slate-50 sticky top-0 z-10 shrink-0">
           <div>
             <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm">Control Panel Transaksi</h3>
             <p className="text-[10px] text-slate-400 font-mono">#{tx.id}</p>
@@ -1397,49 +1378,46 @@ function TransactionDetailModal({ tx, onClose, onConfirmPayment, onRefund, onRel
           </button>
         </div>
 
-        <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
+        <div className="p-6 md:p-8 space-y-6 overflow-y-auto custom-scrollbar">
           {/* HEADER INFO */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div className="flex-1 min-w-0">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Judul Transaksi</p>
-              <h4 className="text-xl font-bold text-slate-900 leading-tight">{tx.title}</h4>
-              <p className="text-xs text-slate-400 mt-1 uppercase font-medium">{tx.createdAt?.toDate().toLocaleString('id-ID')}</p>
+              <h4 className="text-lg font-bold text-slate-900 leading-tight truncate">{tx.title}</h4>
             </div>
-            <div className="text-left md:text-right">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Escrow Value</p>
-              <p className="text-4xl font-black text-indigo-600 tracking-tighter leading-none">{formatCurrency(tx.total)}</p>
+            <div className="text-left sm:text-right">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Escrow Value</p>
+              <p className="text-2xl font-black text-indigo-600 tracking-tighter leading-none">{formatCurrency(tx.total)}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-             <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Entitas Pembeli (Buyer)</p>
-                <div className="flex items-center justify-between gap-2">
-                   <p className="font-bold text-slate-900 text-sm truncate">{buyer?.name || 'Unknown'}</p>
-                   <button onClick={() => copyToClipboard(tx.buyerId, 'bid')} className="text-[9px] font-black text-indigo-600 uppercase tracking-widest bg-white px-2 py-1 rounded border border-indigo-100">
-                     {copiedField === 'bid' ? 'Done' : 'Copy ID'}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Pembeli</p>
+                <div className="flex items-center justify-between gap-1">
+                   <p className="font-bold text-slate-900 text-[11px] truncate">{buyer?.name || 'Unknown'}</p>
+                   <button onClick={() => copyToClipboard(tx.buyerId, 'bid')} className="text-indigo-600">
+                      <Copy className="w-3 h-3" />
                    </button>
                 </div>
-                <p className="text-[9px] text-slate-400 font-mono mt-1">UID: {tx.buyerId?.slice(0, 16)}...</p>
              </div>
-             <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Entitas Penjual (Seller)</p>
-                <div className="flex items-center justify-between gap-2">
-                   <p className="font-bold text-slate-900 text-sm truncate">{seller?.name || 'Unknown'}</p>
-                   <button onClick={() => copyToClipboard(tx.sellerId, 'sid')} className="text-[9px] font-black text-indigo-600 uppercase tracking-widest bg-white px-2 py-1 rounded border border-indigo-100">
-                     {copiedField === 'sid' ? 'Done' : 'Copy ID'}
+             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Penjual</p>
+                <div className="flex items-center justify-between gap-1">
+                   <p className="font-bold text-slate-900 text-[11px] truncate">{seller?.name || 'Unknown'}</p>
+                   <button onClick={() => copyToClipboard(tx.sellerId, 'sid')} className="text-indigo-600">
+                      <Copy className="w-3 h-3" />
                    </button>
                 </div>
-                <p className="text-[9px] text-slate-400 font-mono mt-1">UID: {tx.sellerId?.slice(0, 16)}...</p>
              </div>
           </div>
 
           {/* STATUS BLOCK */}
-          <div className="flex items-center justify-between p-5 bg-indigo-50 border border-indigo-100 rounded-2xl">
+          <div className="flex items-center justify-between p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
              <div>
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Status Operasional</p>
+                <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">Status</p>
                 <span className={cn(
-                  "px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest border bg-white shadow-sm",
+                  "px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border bg-white shadow-sm",
                   getStatusColor(tx.status)
                 )}>
                   {tx.status}
@@ -1448,46 +1426,44 @@ function TransactionDetailModal({ tx, onClose, onConfirmPayment, onRefund, onRel
              {tx.status === 'waiting_payment_confirmation' && (
                 <button 
                   onClick={onConfirmPayment}
-                  className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl shadow-indigo-200 active:scale-95 transition-all"
+                  className="px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-[9px] uppercase tracking-widest shadow-xl shadow-indigo-200 active:scale-95 transition-all"
                 >
-                  KONFIRMASI DANA MASUK
+                  KONFIRMASI DANA
                 </button>
              )}
           </div>
 
-          {/* ACTIONS */}
-          <div className="space-y-4">
-             <p className="text-xs font-black text-slate-900 uppercase tracking-tighter flex items-center gap-2">
-                <ShieldAlert className="w-4 h-4 text-slate-400" />
-                Pusat Kontrol Resolusi & Override
+          <div className="space-y-3">
+             <p className="text-[10px] font-black text-slate-900 uppercase tracking-tighter flex items-center gap-2">
+                Pusat Kontrol & Override
              </p>
              <div className="grid grid-cols-2 gap-3">
                 <button 
-                  disabled={tx.status === 'completed' || tx.status === 'REFUNDED_TO_BUYER'}
+                  disabled={TERMINAL_STATUSES.includes(tx.status)}
                   onClick={onRefund}
-                  className="py-4 bg-red-50 text-red-600 border border-red-100 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all active:scale-95 disabled:opacity-30"
+                  className="py-3 bg-red-50 text-red-600 border border-red-100 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-red-600 hover:text-white transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                    REFUND KE PEMBELI
                 </button>
                 <button 
-                  disabled={tx.status === 'completed' || tx.status === 'REFUNDED_TO_BUYER'}
+                  disabled={TERMINAL_STATUSES.includes(tx.status)}
                   onClick={onRelease}
-                  className="py-4 bg-green-50 text-green-600 border border-green-100 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-green-600 hover:text-white transition-all active:scale-95 disabled:opacity-30"
+                  className="py-3 bg-green-50 text-green-600 border border-green-100 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-green-600 hover:text-white transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
                    RELEASE KE PENJUAL
                 </button>
              </div>
              
-             <div className="pt-4">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1">Override Status Manual</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {['processing', 'shipped', 'completed', 'cancelled'].map((status) => (
+             <div className="pt-2">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Update Status Manual</p>
+                <div className="grid grid-cols-2 xs:grid-cols-3 gap-2">
+                    {['processing', 'shipped', 'disputed', 'completed', 'cancelled'].map((status) => (
                       <button
                         key={status}
                         disabled={tx.status === status}
                         onClick={() => onUpdateStatus(tx.id, status)}
                         className={cn(
-                          "py-2.5 rounded-lg font-bold text-[9px] uppercase tracking-widest border transition-all",
+                          "py-2 rounded-lg font-bold text-[8px] uppercase tracking-widest border transition-all",
                           tx.status === status
                             ? "bg-slate-100 text-slate-400 border-slate-200"
                             : "bg-white text-slate-600 border-slate-200 hover:border-indigo-600 hover:text-indigo-600"
@@ -1501,8 +1477,8 @@ function TransactionDetailModal({ tx, onClose, onConfirmPayment, onRefund, onRel
           </div>
         </div>
 
-        <div className="p-4 border-t border-slate-50 bg-slate-50/50 text-center shrink-0">
-          <p className="text-[9px] text-slate-300 font-black uppercase tracking-[0.5em]">SISTEM KEAMANAN AKTIF</p>
+        <div className="p-3 border-t border-slate-50 bg-slate-50/50 text-center shrink-0">
+          <p className="text-[8px] text-slate-300 font-black uppercase tracking-[0.4em]">SISTEM KEAMANAN REKBRIO</p>
         </div>
       </div>
     </div>
@@ -1522,10 +1498,10 @@ function WithdrawalDetailModal({ withdraw, onClose, onConfirm, onReject }: { wit
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="bg-white rounded-[32px] w-full max-w-lg overflow-hidden shadow-2xl border border-divider flex flex-col">
-        <div className="p-6 border-b border-divider flex justify-between items-center bg-slate-50 shrink-0">
+      <div className="bg-white rounded-[32px] w-full max-w-md overflow-hidden shadow-2xl border border-divider flex flex-col max-h-[85vh]">
+        <div className="p-6 border-b border-divider flex justify-between items-center bg-slate-50 sticky top-0 z-10 shrink-0">
           <div>
-            <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm">Detail Penarikan Dana</h3>
+            <h3 className="font-black text-slate-900 uppercase tracking-widest text-sm">Detail Penarikan</h3>
             <p className="text-[10px] text-slate-400 font-mono">#{withdraw.id}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
@@ -1533,86 +1509,83 @@ function WithdrawalDetailModal({ withdraw, onClose, onConfirm, onReject }: { wit
           </button>
         </div>
         
-        <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
-          {/* USER INFO */}
-          <div className="flex justify-between items-center bg-indigo-50/30 p-5 rounded-2xl border border-indigo-100">
+        <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 flex justify-between items-center">
              <div>
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">User Pengaju</p>
-                <h4 className="text-lg font-bold text-slate-900">{withdraw.userName || 'Unknown'}</h4>
-                <p className="text-[10px] text-slate-400 font-mono font-bold">UID: {withdraw.userId}</p>
+                <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-0.5">Pengaju</p>
+                <h4 className="text-sm font-bold text-slate-900">{withdraw.userName || 'Unknown'}</h4>
+                <p className="text-[9px] text-slate-400 font-mono">UID: {withdraw.userId?.slice(0, 12)}...</p>
              </div>
-             <button onClick={() => copyToClipboard(withdraw.userId, 'uid')} className="p-2 bg-white text-indigo-600 rounded-xl border border-indigo-100 shadow-sm active:scale-95 transition-all">
-                {copiedField === 'uid' ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+             <button onClick={() => copyToClipboard(withdraw.userId, 'uid')} className="p-2 bg-white text-indigo-600 rounded-lg border border-indigo-100 shadow-sm transition-all active:scale-95">
+                {copiedField === 'uid' ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
              </button>
           </div>
 
-          {/* NOMINAL */}
-          <div className="text-center py-4">
-             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nominal yang Harus Ditransfer</p>
-             <div className="flex items-center justify-center gap-4">
-                <p className="text-5xl font-black text-slate-900 tracking-tighter">{formatCurrency(withdraw.amount)}</p>
-                <button onClick={() => copyToClipboard(withdraw.amount.toString(), 'amt', true)} className="text-indigo-600 hover:text-indigo-800 transition-colors">
-                   <Copy className="w-5 h-5" />
+          <div className="text-center py-2">
+             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Nominal Transfer</p>
+             <div className="flex items-center justify-center gap-3">
+                <p className="text-3xl font-black text-slate-900 tracking-tighter">{formatCurrency(withdraw.amount)}</p>
+                <button onClick={() => copyToClipboard(withdraw.amount.toString(), 'amt', true)} className="text-indigo-600">
+                   <Copy className="w-4 h-4" />
                 </button>
              </div>
           </div>
 
-          {/* BANK INFO */}
-          <div className="bg-slate-50 rounded-3xl p-6 space-y-6 border border-slate-100">
+          <div className="bg-slate-50 rounded-2xl p-4 space-y-4 border border-slate-100">
              <div className="grid grid-cols-2 gap-4">
                 <div>
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Bank Tujuan</p>
-                   <p className="text-base font-black text-slate-900 uppercase">{withdraw.bankName}</p>
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Bank</p>
+                   <p className="text-xs font-black text-slate-900 uppercase">{withdraw.bankName}</p>
                 </div>
                 <div className="text-right">
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Atas Nama</p>
-                   <p className="text-base font-black text-slate-900 uppercase truncate">{withdraw.bankAccountName}</p>
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Atas Nama</p>
+                   <p className="text-xs font-black text-slate-900 uppercase truncate">{withdraw.bankAccountName}</p>
                 </div>
              </div>
              
-             <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-divider shadow-sm">
+             <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-divider shadow-sm">
                 <div>
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nomor Rekening</p>
-                   <p className="text-2xl font-black text-slate-900 font-mono tracking-wider">{withdraw.bankAccount}</p>
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Rekening</p>
+                   <p className="text-xl font-black text-slate-900 font-mono tracking-wider">{withdraw.bankAccount}</p>
                 </div>
-                <button onClick={() => copyToClipboard(withdraw.bankAccount, 'acc', true)} className="bg-slate-900 text-white p-3 rounded-xl shadow-xl active:scale-95 transition-all">
-                   {copiedField === 'acc' ? <CheckCircle2 className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                <button onClick={() => copyToClipboard(withdraw.bankAccount, 'acc', true)} className="bg-slate-900 text-white p-2.5 rounded-lg active:scale-95 transition-all">
+                   {copiedField === 'acc' ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 </button>
              </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
              <button 
-               onClick={onConfirm}
-               className="w-full bg-indigo-600 text-white font-black uppercase tracking-[0.2em] py-5 rounded-[24px] shadow-2xl shadow-indigo-100 active:scale-95 transition-all text-xs"
+                onClick={onConfirm}
+                className="w-full bg-indigo-600 text-white font-black uppercase tracking-[0.2em] py-4 rounded-xl shadow-xl shadow-indigo-100 active:scale-95 transition-all text-[10px]"
              >
-               KONFIRMASI TELAH TRANSFER
+                KONFIRMASI TRANSFER
              </button>
              <button 
-               onClick={onReject}
-               className="w-full py-4 text-red-600 font-black uppercase tracking-widest bg-red-50 rounded-2xl hover:bg-red-100 transition-all text-[10px]"
+                onClick={onReject}
+                className="w-full py-3 text-red-600 font-black uppercase tracking-widest bg-red-50 rounded-xl hover:bg-red-100 transition-all text-[9px]"
              >
-               TOLAK PERMINTAAN
+                TOLAK PERMINTAAN
              </button>
           </div>
         </div>
 
-        <div className="p-4 border-t border-slate-50 bg-slate-50/50 text-center shrink-0">
-          <p className="text-[9px] text-slate-300 font-black uppercase tracking-[0.5em]">PROTOKOL KEAMANAN TRANSAKSI AKTIF</p>
+        <div className="p-3 border-t border-slate-50 bg-slate-50/50 text-center shrink-0">
+          <p className="text-[8px] text-slate-300 font-black uppercase tracking-[0.4em]">PROTOKOL REKBRIO</p>
         </div>
       </div>
     </div>
   );
 }
 
-function ManualRefundModal({ tx, buyer, onClose, onConfirm }: { tx: any, buyer: any, onClose: () => void, onConfirm: () => void }) {
+function ManualResolutionModal({ tx, targetUser, targetRole, onClose, onConfirm }: { tx: any, targetUser: any, targetRole: 'buyer' | 'seller', onClose: () => void, onConfirm: (reason: string) => void }) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [reason, setReason] = useState('');
+  const { profile } = useAuth();
 
   const copyToClipboard = (text: string, field: string, clean = false) => {
     let toCopy = text;
-    if (clean) {
-      toCopy = text.replace(/\D/g, '');
-    }
+    if (clean) toCopy = text.replace(/\D/g, '');
     navigator.clipboard.writeText(toCopy);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
@@ -1622,12 +1595,16 @@ function ManualRefundModal({ tx, buyer, onClose, onConfirm }: { tx: any, buyer: 
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
   };
 
+  const isRefund = targetRole === 'buyer';
+
   return (
-    <div className="fixed inset-0 bg-black/80 z-[120] flex items-center justify-center p-4 backdrop-blur-xl animate-in fade-in duration-300">
-      <div className="bg-white rounded-[40px] w-full max-w-lg overflow-hidden shadow-2xl border border-divider">
-        <div className="p-6 border-b border-divider flex justify-between items-center bg-gray-50">
+    <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-xl animate-in fade-in duration-300">
+      <div className="bg-white rounded-[40px] w-full max-w-lg overflow-hidden shadow-2xl border border-divider flex flex-col max-h-[85vh]">
+        <div className="p-6 border-b border-divider flex justify-between items-center bg-gray-50 sticky top-0 z-10 shrink-0">
           <div>
-            <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">Escrow Refund Panel</h3>
+            <h3 className="font-black text-gray-900 uppercase tracking-widest text-sm">
+              Eksekusi {isRefund ? 'Refund' : 'Transfer'}
+            </h3>
             <p className="text-[10px] text-gray-400 font-mono italic">#{tx.id}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
@@ -1635,79 +1612,90 @@ function ManualRefundModal({ tx, buyer, onClose, onConfirm }: { tx: any, buyer: 
           </button>
         </div>
         
-        <div className="p-8 space-y-6">
-          <div className="bg-red-50 p-4 rounded-2xl border border-red-100 mb-2">
-            <p className="text-[10px] text-red-600 font-black uppercase tracking-[0.2em] mb-1">Peringatan Admin</p>
-            <p className="text-xs text-red-700 leading-relaxed font-bold italic">
-               ⚠ Lakukan transfer manual ke rekening pembeli di bawah ini secara teliti. Aksi ini tidak dapat dibatalkan.
+        <div className="p-6 md:p-8 space-y-6 overflow-y-auto custom-scrollbar">
+          <div className={`p-4 rounded-2xl border ${isRefund ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
+            <p className={`text-[9px] font-black uppercase tracking-[0.2em] mb-1 ${isRefund ? 'text-red-600' : 'text-green-600'}`}>Peringatan</p>
+            <p className={`text-xs leading-relaxed font-bold italic ${isRefund ? 'text-red-700' : 'text-green-700'}`}>
+               ⚠ Lakukan transfer manual ke {isRefund ? 'pembeli' : 'penjual'}. Aksi permanen.
             </p>
           </div>
 
           <div className="space-y-5">
-            <div className="flex justify-between items-end">
+            <div className="flex justify-between items-end border-b border-divider pb-4">
               <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nama Pembeli</p>
-                <p className="font-bold text-gray-900">{buyer?.name || 'Unknown'}</p>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Tujuan: {targetUser?.name}</p>
+                <p className="text-[9px] text-gray-400 font-mono uppercase">UID: {targetUser?.id?.slice(0, 16)}...</p>
               </div>
               <button 
-                onClick={() => copyToClipboard(buyer?.id || '', 'bid')}
-                className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-2 py-1 rounded"
+                onClick={() => copyToClipboard(targetUser?.id || '', 'uid-btn')}
+                className="text-[9px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 px-3 py-1 rounded-lg border border-blue-100"
               >
-                {copiedField === 'bid' ? 'Done' : 'ID USER [SALIN]'}
+                {copiedField === 'uid-btn' ? 'Done' : 'Copy ID'}
               </button>
             </div>
 
-            <div className="pt-4 border-t border-divider grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Bank</p>
-                <p className="font-bold text-gray-900">{buyer?.bankName || '-'}</p>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Bank</p>
+                <p className="text-xs font-black text-slate-900 uppercase">{targetUser?.bankName || '-'}</p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Atas Nama</p>
-                <p className="font-bold text-gray-900">{buyer?.bankAccountName || '-'}</p>
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">A/N</p>
+                <p className="text-xs font-black text-slate-900 uppercase truncate">{targetUser?.bankAccountName || '-'}</p>
               </div>
             </div>
 
-            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-divider">
+            <div className="flex justify-between items-center p-4 bg-gray-900 text-white rounded-2xl border border-gray-800">
               <div>
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Nomor Rekening</p>
-                <p className="font-mono text-xl font-black text-gray-900 tracking-wider">
-                  {buyer?.bankAccount || 'Data Kosong'}
+                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Rekening</p>
+                <p className="font-mono text-xl font-black tracking-wider text-indigo-400">
+                  {targetUser?.bankAccount || 'DATA KOSONG'}
                 </p>
               </div>
               <button 
-                onClick={() => copyToClipboard(buyer?.bankAccount || '', 'acc', true)}
-                className="bg-gray-900 text-white p-2 rounded-xl shadow-lg active:scale-95 transition-all"
+                onClick={() => copyToClipboard(targetUser?.bankAccount || '', 'acc', true)}
+                className="bg-gray-700 p-2.5 rounded-lg hover:bg-gray-600"
               >
-                <Copy className="w-5 h-5" />
+                {copiedField === 'acc' ? <CheckCircle2 className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
 
-            <div className="flex justify-between items-center p-6 bg-blue-50 rounded-3xl border border-blue-100">
+            <div className={`p-4 rounded-2xl border flex justify-between items-center ${isRefund ? 'bg-blue-50 border-blue-100' : 'bg-emerald-50 border-emerald-100'}`}>
               <div>
-                <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Nominal Refund (100%)</p>
-                <p className="text-3xl font-black text-blue-600 tracking-tighter">
-                  {formatCurrencyLocal(tx.total)}
+                <p className={`text-[9px] font-black uppercase tracking-widest mb-0.5 ${isRefund ? 'text-blue-400' : 'text-emerald-600'}`}>Nominal</p>
+                <p className={`text-2xl font-black tracking-tighter ${isRefund ? 'text-blue-600' : 'text-emerald-700'}`}>
+                  {formatCurrencyLocal(isRefund ? tx.total : tx.price)}
                 </p>
               </div>
               <button 
-                onClick={() => copyToClipboard(tx.total.toString(), 'amt', true)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-200 active:scale-95 transition-all"
+                onClick={() => copyToClipboard((isRefund ? tx.total : tx.price).toString(), 'amt', true)}
+                className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest text-white ${isRefund ? 'bg-blue-600' : 'bg-emerald-600'}`}
               >
-                {copiedField === 'amt' ? 'DISALIN' : 'SALIN ANGKA'}
+                {copiedField === 'amt' ? 'Done' : 'Copy'}
               </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Alasan Keputusan Admin (Wajib)</label>
+              <textarea 
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Contoh: Barang tidak sesuai deskripsi, Penjual terbukti benar..."
+                className="w-full px-4 py-3 bg-gray-50 border border-divider rounded-xl text-xs focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all h-20 resize-none font-medium"
+              />
             </div>
           </div>
 
-          <div className="pt-4">
+          <div className="pt-2">
             <button 
-              onClick={onConfirm}
-              className="w-full bg-red-600 text-white font-black uppercase tracking-[0.3em] py-5 rounded-[24px] shadow-2xl shadow-red-200 active:scale-95 transition-all text-xs"
+              onClick={() => onConfirm(reason)}
+              disabled={!reason.trim()}
+              className={`w-full text-white font-black uppercase tracking-[0.2em] py-4 rounded-xl shadow-xl active:scale-95 transition-all text-[10px] ${!reason.trim() ? 'bg-slate-300 cursor-not-allowed' : (isRefund ? 'bg-red-600 shadow-red-200' : 'bg-indigo-600 shadow-indigo-200')}`}
             >
-              KONFIRMASI SUDAH TRANSFER
+              KONFIRMASI {isRefund ? 'REFUND' : 'TRANSFER'}
             </button>
-            <p className="text-[9px] text-gray-400 text-center mt-4 font-black uppercase tracking-widest">
-              Verifikasi manual oleh administrator sistem
+            <p className="text-[8px] text-gray-400 text-center mt-3 font-black uppercase tracking-widest">
+              Manual Action: {profile?.name}
             </p>
           </div>
         </div>

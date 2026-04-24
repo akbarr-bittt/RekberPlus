@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, onSnapshot, serverTimestamp, writeBatch, increment, collection } from 'firebase/firestore';
+import { doc, onSnapshot, serverTimestamp, writeBatch, increment, collection, runTransaction, deleteField } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, handleFirestoreError, OperationType } from '../lib/utils';
-import { PlusCircle, Search, ArrowLeft, Copy, CheckCircle2, Clock, ShieldCheck, AlertCircle, Package, X } from 'lucide-react';
+import { PlusCircle, Search, ArrowLeft, Copy, CheckCircle2, Clock, ShieldCheck, AlertCircle, Package, X, Calendar, ShieldAlert, RotateCcw, Info } from 'lucide-react';
 import ReviewSection from '../components/ReviewSection';
 import PinVerificationModal from '../components/PinVerificationModal';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -122,6 +122,9 @@ export default function TransactionDetails() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [isEscrowBerjangka, setIsEscrowBerjangka] = useState(false);
+  const [escrowDuration, setEscrowDuration] = useState(7);
+  const [timeRemaining, setTimeRemaining] = useState<{ days: number, hours: number, mins: number } | null>(null);
   const [pinModalConfig, setPinModalConfig] = useState<{ isOpen: boolean, action: () => void, actionName: string }>({
     isOpen: false,
     action: () => {},
@@ -133,7 +136,22 @@ export default function TransactionDetails() {
 
     const unsubscribe = onSnapshot(doc(db, 'transactions', id), (doc) => {
       if (doc.exists()) {
-        setTx({ id: doc.id, ...doc.data() });
+        const data = { id: doc.id, ...doc.data() } as any;
+        setTx(data);
+        if (data) {
+          setIsEscrowBerjangka(data.isEscrowBerjangka || false);
+          setEscrowDuration(data.escrowDuration || 7);
+          
+          // Lazy Auto Release check
+          const activeEscrowStatuses = ['TERM_ESCROW_ACTIVE', 'processing', 'shipped'];
+          if (data.isEscrowBerjangka && activeEscrowStatuses.includes(data.status) && data.escrowReleaseDate) {
+             const releaseDate = data.escrowReleaseDate.toDate();
+             if (new Date() >= releaseDate) {
+                console.log("[AUTO RELEASE] Release date reached. Auto completing...");
+                handleAutoRelease(doc.id, data);
+             }
+          }
+        }
       } else {
         setTx(null);
       }
@@ -144,6 +162,39 @@ export default function TransactionDetails() {
 
     return () => unsubscribe();
   }, [id, user]);
+
+  // Real-time UI countdown
+  useEffect(() => {
+    if (!tx?.escrowReleaseDate) {
+      setTimeRemaining(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const now = new Date().getTime();
+      const releaseTime = tx.escrowReleaseDate.toDate().getTime();
+      const diff = releaseTime - now;
+
+      if (diff <= 0) {
+        setTimeRemaining({ days: 0, hours: 0, mins: 0 });
+        // Trigger check if we're exactly at time
+        if (['TERM_ESCROW_ACTIVE', 'processing', 'shipped'].includes(tx.status)) {
+           handleAutoRelease(tx.id, tx);
+        }
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+      setTimeRemaining({ days, hours, mins });
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, [tx?.escrowReleaseDate, tx?.status]);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -249,40 +300,105 @@ export default function TransactionDetails() {
     });
   };
 
-  const handleClaim = async () => {
-    if (!id || !user || !tx) return;
-    
-    const executeClaim = async () => {
-      setActionLoading(true);
-      setPinModalConfig({ ...pinModalConfig, isOpen: false });
-      try {
-        const batch = writeBatch(db);
-        batch.update(doc(db, 'users', user.uid), { balance: increment(tx.price) });
-        batch.update(doc(db, 'transactions', id), { isClaimed: true, updatedAt: serverTimestamp() });
-        await batch.commit();
+  const handleAutoRelease = async (txId: string, txData: any) => {
+    if (actionLoading) return;
+    try {
+      await runTransaction(db, async (transaction) => {
+        const txRef = doc(db, 'transactions', txId);
+        const txSnap = await transaction.get(txRef);
+        
+        if (!txSnap.exists()) return;
+        const currentData = txSnap.data();
+        
+        // Safety check: already released or wrong status?
+        if (currentData.status !== 'TERM_ESCROW_ACTIVE' && currentData.status !== 'processing' && currentData.status !== 'shipped') return;
+        
+        const releaseDate = currentData.escrowReleaseDate?.toDate();
+        if (!releaseDate || new Date() < releaseDate) return;
 
-        // Notify User (Self - for confirmation)
-        await sendNotification({
-          userId: user.uid,
-          roleTarget: 'user',
-          type: 'topup',
-          priority: 'low',
-          title: 'Pencairan Dana Berhasil',
-          message: `Dana sebesar ${formatCurrency(tx.price)} telah dicairkan ke saldo Anda.`,
-          link: `/profile`
+        const profitRef = doc(collection(db, 'platform_profits'));
+
+        transaction.update(txRef, {
+          status: 'completed',
+          updatedAt: serverTimestamp(),
+          autoReleased: true
         });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.UPDATE, `transactions/${id}`, { currentUser: user });
-      } finally {
-        setActionLoading(false);
-      }
-    };
 
-    setPinModalConfig({
-      isOpen: true,
-      action: executeClaim,
-      actionName: 'mengklaim dana'
-    });
+        if (currentData.fee > 0) {
+          transaction.set(profitRef, {
+            transactionId: txId,
+            fee: currentData.fee,
+            type: 'transaction_fee_auto',
+            createdAt: serverTimestamp()
+          });
+        }
+      });
+      
+      console.log("[AUTO RELEASE] Success");
+      
+      // Notify Parties
+      if (txData.sellerId) {
+        await sendNotification({
+          userId: txData.sellerId,
+          roleTarget: 'user',
+          type: 'transaction',
+          priority: 'high',
+          title: 'Escrow Berjangka Selesai',
+          message: `Dana transaksi "${txData.title}" otomatis akan ditransfer oleh Admin karena masa tunggu berakhir.`,
+          link: `/transaction/${txId}`
+        });
+      }
+    } catch (error) {
+      console.error("Auto release error:", error);
+    }
+  };
+
+  const toggleEscrowBerjangka = async () => {
+    if (!id || !tx || !isBuyer || tx.status !== 'waiting_payment') return;
+    
+    const newIsEscrow = !isEscrowBerjangka;
+    const securityFeePerDay = platformSettings?.securityFeePerDay || 0;
+    const securityFee = newIsEscrow ? (securityFeePerDay * escrowDuration) : 0;
+    const newTotal = tx.price + tx.fee + securityFee;
+
+    try {
+      setActionLoading(true);
+      await writeBatch(db).update(doc(db, 'transactions', id), {
+        isEscrowBerjangka: newIsEscrow,
+        escrowDuration: newIsEscrow ? escrowDuration : deleteField(),
+        escrowSecurityFee: newIsEscrow ? securityFee : deleteField(),
+        total: newTotal,
+        updatedAt: serverTimestamp()
+      }).commit();
+      setIsEscrowBerjangka(newIsEscrow);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `transactions/${id}`, { currentUser: user });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const updateEscrowDuration = async (days: number) => {
+    if (!id || !tx || !isBuyer || tx.status !== 'waiting_payment') return;
+
+    const securityFeePerDay = platformSettings?.securityFeePerDay || 0;
+    const securityFee = days * securityFeePerDay;
+    const newTotal = tx.price + tx.fee + securityFee;
+
+    try {
+      setActionLoading(true);
+      await writeBatch(db).update(doc(db, 'transactions', id), {
+        escrowDuration: days,
+        escrowSecurityFee: securityFee,
+        total: newTotal,
+        updatedAt: serverTimestamp()
+      }).commit();
+      setEscrowDuration(days);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `transactions/${id}`, { currentUser: user });
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center">Memuat...</div>;
@@ -297,11 +413,15 @@ export default function TransactionDetails() {
     switch (tx.status) {
       case 'waiting_payment': return { color: 'text-orange-600 bg-orange-50', icon: Clock, text: 'MENUNGGU PEMBAYARAN', desc: 'Silakan transfer ke rekening resmi Rekbrio sesuai nominal.' };
       case 'waiting_payment_confirmation': return { color: 'text-blue-600 bg-blue-50', icon: Clock, text: 'VERIFIKASI MANUAL', desc: 'Admin sedang mengecek mutasi rekening. Mohon tunggu sebentar.' };
+      case 'TERM_ESCROW_ACTIVE': return { color: 'text-indigo-600 bg-indigo-50', icon: ShieldCheck, text: 'ESCROW BERJANGKA AKTIF', desc: 'Dana dikunci dalam sistem untuk keamanan ekstra.' };
       case 'funds_held': return { color: 'text-green-600 bg-green-50', icon: ShieldCheck, text: 'DANA DITAHAN', desc: 'Pembayaran sudah diterima sistem. Penjual silakan proses pesanan.' };
       case 'processing': return { color: 'text-purple-600 bg-purple-50', icon: Package, text: 'SEDANG DIPROSES', desc: 'Penjual sedang mengerjakan pesanan Anda.' };
       case 'shipped': return { color: 'text-indigo-600 bg-indigo-50', icon: Package, text: 'PESANAN DIKIRIM', desc: 'Pesanan telah dikirim. Pembeli silakan lapor jika sudah diterima.' };
-      case 'completed': return { color: 'text-green-600 bg-green-50', icon: CheckCircle2, text: 'TRANSAKSI SELESAI', desc: 'Dana telah diteruskan ke saldo penjual. Terima kasih.' };
+      case 'completed': return { color: 'text-green-600 bg-green-50', icon: CheckCircle2, text: 'TRANSAKSI SELESAI', desc: 'Sistem telah menginstruksikan Admin untuk mentransfer dana ke rekening penjual. Terima kasih.' };
+      case 'RELEASED_TO_SELLER': return { color: 'text-blue-600 bg-blue-50', icon: CheckCircle2, text: 'DANA DIKIRIM KE PENJUAL', desc: 'Admin telah menyelesaikan sengketa dengan mentransfer dana ke Penjual.' };
+      case 'REFUNDED_TO_BUYER': return { color: 'text-orange-600 bg-orange-50', icon: RotateCcw, text: 'DANA DIKEMBALIKAN KE PEMBELI', desc: 'Admin telah menyelesaikan sengketa dengan mengembalikan dana ke Pembeli.' };
       case 'cancelled': return { color: 'text-gray-600 bg-gray-50', icon: AlertCircle, text: 'DIBATALKAN', desc: 'Transaksi ini telah dibatalkan.' };
+      case 'disputed': return { color: 'text-red-600 bg-red-50', icon: ShieldAlert, text: 'DALAM SENGKETA', desc: 'Transaksi ini sedang ditengahi oleh Admin karena adanya kendala/laporan.' };
       default: return { color: 'text-gray-600 bg-gray-50', icon: Clock, text: 'STATUS TIDAK DIKENAL', desc: '' };
     }
   };
@@ -322,11 +442,28 @@ export default function TransactionDetails() {
         
         {/* Status Banner */}
         <div className={`p-6 rounded-2xl border ${statusDisplay.color.replace('text-', 'border-').replace('bg-', 'bg-')}`}>
-          <div className="flex items-center gap-3 mb-2">
-            <StatusIcon className="w-6 h-6" />
-            <h2 className="text-lg font-bold">{statusDisplay.text}</h2>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <StatusIcon className="w-6 h-6" />
+              <h2 className="text-lg font-bold">{statusDisplay.text}</h2>
+            </div>
+            {tx.resolvedAt && (
+              <span className="text-[9px] font-black uppercase tracking-widest bg-white/50 px-2 py-1 rounded-md">
+                RESOLVED: {tx.resolvedAt.toDate().toLocaleDateString('id-ID')}
+              </span>
+            )}
           </div>
-          <p className="text-sm opacity-90">{statusDisplay.desc}</p>
+          <p className="text-sm opacity-90 leading-relaxed mb-4">{statusDisplay.desc}</p>
+          
+          {(tx.status === 'RELEASED_TO_SELLER' || tx.status === 'REFUNDED_TO_BUYER') && tx.resolutionReason && (
+            <div className="bg-white/60 p-4 rounded-xl border border-white/40 space-y-2 mt-4 backdrop-blur-sm">
+              <div className="flex items-center gap-2 text-slate-900 mb-1">
+                <Info className="w-4 h-4 text-indigo-600" />
+                <p className="text-[10px] font-black uppercase tracking-widest">Alasan Keputusan Admin</p>
+              </div>
+              <p className="text-sm font-bold text-slate-800 italic">"{tx.resolutionReason}"</p>
+            </div>
+          )}
         </div>
 
         {/* Invite Link if needed */}
@@ -369,12 +506,107 @@ export default function TransactionDetails() {
               <span>Biaya Layanan</span>
               <span className="font-medium text-gray-900">{formatCurrency(tx.fee)}</span>
             </div>
+            {tx.isEscrowBerjangka && (
+              <div className="flex justify-between text-sm text-blue-600 font-bold">
+                <span className="flex items-center gap-1">
+                   <ShieldCheck className="w-3 h-3" /> Security Fee ({tx.escrowDuration} Hari)
+                </span>
+                <span>{formatCurrency(tx.escrowSecurityFee || 0)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-lg font-bold text-gray-900 pt-3 border-t border-divider">
               <span>Total</span>
               <span className="text-blue-600">{formatCurrency(tx.total)}</span>
             </div>
           </div>
         </div>
+
+        {/* Escrow Berjangka Stats / Settings */}
+        {tx.isEscrowBerjangka && tx.escrowReleaseDate && !['completed', 'cancelled', 'REFUNDED_TO_BUYER'].includes(tx.status) && (
+           <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100 space-y-4">
+              <div className="flex items-center justify-between">
+                 <h3 className="font-bold text-indigo-900 flex items-center gap-2">
+                    <Calendar className="w-5 h-5" /> Status Escrow
+                 </h3>
+                 <span className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-black rounded-full uppercase tracking-widest">
+                    Running
+                 </span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="bg-white p-4 rounded-xl border border-indigo-100">
+                    <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest mb-1">Berakhir Pada</p>
+                    <p className="text-sm font-bold text-indigo-900">
+                       {tx.escrowReleaseDate?.toDate().toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </p>
+                 </div>
+                 <div className="bg-white p-4 rounded-xl border border-indigo-100">
+                    <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest mb-1">Sisa Waktu</p>
+                    <p className="text-sm font-bold text-indigo-900">
+                       {timeRemaining ? (
+                         <span>{timeRemaining.days}d {timeRemaining.hours}h {timeRemaining.mins}m</span>
+                       ) : (
+                         <span>Menghitung...</span>
+                       )}
+                    </p>
+                 </div>
+              </div>
+
+              <div className="flex items-start gap-3 p-3 bg-white/50 rounded-lg border border-indigo-100">
+                 <ShieldAlert className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                 <p className="text-[10px] text-indigo-700 font-medium italic">
+                    Dana akan otomatis dilepaskan ke penjual saat countdown berakhir. Gunakan fitur "Lapor Masalah" jika pesanan tidak sesuai sebelum waktu habis.
+                 </p>
+              </div>
+           </div>
+        )}
+
+        {isBuyer && tx.status === 'waiting_payment' && (
+          <div className="bg-white p-6 rounded-2xl border border-divider space-y-4 shadow-sm">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                   <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center">
+                      <ShieldCheck className="w-6 h-6" />
+                   </div>
+                   <div>
+                      <h4 className="text-sm font-bold text-gray-900">Escrow Berjangka</h4>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Keamanan Ekstra (Opsional)</p>
+                   </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={actionLoading}
+                  onClick={toggleEscrowBerjangka}
+                  className={`w-12 h-6 rounded-full transition-all relative ${isEscrowBerjangka ? 'bg-indigo-600' : 'bg-gray-200'}`}
+                >
+                  <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-all ${isEscrowBerjangka ? 'translate-x-6' : ''}`} />
+                </button>
+             </div>
+
+             {isEscrowBerjangka && (
+               <div className="space-y-4 pt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100">
+                    <label className="block text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-3">Durasi Penguncian</label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="30"
+                      value={escrowDuration}
+                      disabled={actionLoading}
+                      onChange={(e) => updateEscrowDuration(parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                    <div className="flex justify-between mt-3 font-black text-indigo-700 text-[10px] uppercase tracking-widest">
+                      <span>1 Hari</span>
+                      <span className="bg-indigo-600 text-white px-4 py-1 rounded-full shadow-sm shadow-indigo-200">{escrowDuration} Hari</span>
+                      <span>30 Hari</span>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-400 text-center font-bold italic">Biaya Keamanan: {formatCurrency(escrowDuration * (platformSettings?.securityFeePerDay || 0))}</p>
+               </div>
+             )}
+          </div>
+        )}
 
         {/* Action Buttons */}
         {!needsOtherParty && tx.status !== 'cancelled' && (
@@ -408,14 +640,14 @@ export default function TransactionDetails() {
               </div>
             )}
 
-            {isSeller && tx.status === 'funds_held' && (
-              <button 
-                disabled={actionLoading}
-                onClick={() => handleAction('processing')}
-                className="btn-primary w-full"
-              >
-                MULAI PROSES PESANAN
-              </button>
+            {(isSeller && (tx.status === 'funds_held' || tx.status === 'TERM_ESCROW_ACTIVE')) && (
+               <button 
+                 disabled={actionLoading}
+                 onClick={() => handleAction('processing')}
+                 className="btn-primary w-full"
+               >
+                 MULAI PROSES PESANAN
+               </button>
             )}
 
             {isSeller && tx.status === 'processing' && (
@@ -429,34 +661,27 @@ export default function TransactionDetails() {
             )}
 
             {isBuyer && tx.status === 'shipped' && (
-              <button 
-                disabled={actionLoading}
-                onClick={() => handleAction('completed')}
-                className="btn-primary w-full"
-              >
-                KONFIRMASI BARANG DITERIMA
-              </button>
+              tx.isEscrowBerjangka ? (
+                <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center gap-3">
+                  <ShieldAlert className="w-5 h-5 text-indigo-600 shrink-0" />
+                  <p className="text-xs text-indigo-700 font-medium">
+                    Escrow Berjangka Aktif. Dana akan dilepaskan otomatis saat waktu habis. Tidak dapat dikonfirmasi manual.
+                  </p>
+                </div>
+              ) : (
+                <button 
+                  disabled={actionLoading}
+                  onClick={() => handleAction('completed')}
+                  className="btn-primary w-full"
+                >
+                  KONFIRMASI BARANG DITERIMA
+                </button>
+              )
             )}
 
-            {isSeller && tx.status === 'completed' && !tx.isClaimed && (
-              <button 
-                disabled={actionLoading}
-                onClick={handleClaim}
-                className="btn-primary w-full"
-              >
-                TARIK DANA KE SALDO ({formatCurrency(tx.price)})
-              </button>
-            )}
-
-            {isSeller && tx.status === 'completed' && tx.isClaimed && (
+            {tx.status === 'completed' && (
               <div className="text-green-600 text-center font-medium bg-green-50 py-3 rounded-xl">
-                Dana telah dicairkan ke saldo Anda.
-              </div>
-            )}
-
-            {isBuyer && tx.status === 'completed' && (
-              <div className="text-green-600 text-center font-medium bg-green-50 py-3 rounded-xl">
-                Transaksi telah selesai.
+                Transaksi telah selesai. Menunggu proses transfer dari Admin.
               </div>
             )}
 

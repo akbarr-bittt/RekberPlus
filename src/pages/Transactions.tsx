@@ -48,7 +48,8 @@ export default function Transactions() {
       case 'completed': return { color: 'text-green-600 bg-green-50', icon: CheckCircle2, label: 'TRANSAKSI SELESAI' };
       case 'cancelled': return { color: 'text-gray-600 bg-gray-50', icon: AlertCircle, label: 'DIBATALKAN' };
       case 'disputed': return { color: 'text-red-600 bg-red-50', icon: AlertCircle, label: 'KOMPLAIN' };
-      case 'REFUNDED_TO_BUYER': return { color: 'text-red-600 bg-red-50', icon: AlertCircle, label: 'DANA DIKEMBALIKAN' };
+      case 'RELEASED_TO_SELLER': return { color: 'text-blue-600 bg-blue-50', icon: CheckCircle2, label: 'DANA DIKIRIM KE PENJUAL' };
+      case 'REFUNDED_TO_BUYER': return { color: 'text-orange-600 bg-orange-50', icon: AlertCircle, label: 'DANA DIKEMBALIKAN KE PEMBELI' };
       default: return { color: 'text-gray-600 bg-gray-50', icon: Clock, label: 'STATUS TIDAK DIKENAL' };
     }
   };

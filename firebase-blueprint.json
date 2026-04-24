@@ -18,10 +18,6 @@
           "type": "string",
           "description": "The user's full name"
         },
-        "balance": {
-          "type": "number",
-          "description": "The user's internal balance"
-        },
         "pin": {
           "type": "string",
           "description": "6-digit security PIN for transactions"
@@ -52,7 +48,7 @@
           "description": "When the user was created"
         }
       },
-      "required": ["uid", "email", "name", "balance", "createdAt"]
+      "required": ["uid", "email", "name", "createdAt"]
     },
     "Transaction": {
       "title": "Transaction",
@@ -105,7 +101,8 @@
             "shipped",
             "completed",
             "cancelled",
-            "disputed"
+            "disputed",
+            "TERM_ESCROW_ACTIVE"
           ],
           "description": "Current status of the transaction"
         },
@@ -122,6 +119,23 @@
         "isClaimed": {
           "type": "boolean",
           "description": "Whether the seller has claimed the funds after completion"
+        },
+        "isEscrowBerjangka": {
+          "type": "boolean",
+          "description": "Whether this is a termed escrow"
+        },
+        "escrowDuration": {
+          "type": "number",
+          "description": "Duration in days"
+        },
+        "escrowSecurityFee": {
+          "type": "number",
+          "description": "Extra fee for termed escrow"
+        },
+        "escrowReleaseDate": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Estimated release date"
         }
       },
       "required": [
@@ -137,138 +151,18 @@
         "updatedAt"
       ]
     },
-    "TopUp": {
-      "title": "TopUp",
-      "description": "Manual top-up request with unique code",
+    "Settings": {
+      "title": "Settings",
+      "description": "Global platform settings",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "The user requesting the top-up"
-        },
-        "nominal": {
-          "type": "number",
-          "description": "The base amount requested"
-        },
-        "uniqueCode": {
-          "type": "number",
-          "description": "The unique 3-digit code"
-        },
-        "amount": {
-          "type": "number",
-          "description": "The total amount to transfer (nominal + uniqueCode)"
-        },
-        "status": {
-          "type": "string",
-          "enum": ["PENDING", "SUCCESS", "REJECTED", "EXPIRED"],
-          "description": "The status of the top-up"
-        },
-        "adminId": {
-          "type": "string",
-          "description": "The admin who processed the top-up"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "When the top-up was created"
-        },
-        "expiresAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "When the pending top-up expires"
-        },
-        "processedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "When the top-up was processed"
-        }
-      },
-      "required": ["userId", "nominal", "uniqueCode", "amount", "status", "createdAt", "expiresAt"]
-    },
-    "Withdrawal": {
-      "title": "Withdrawal",
-      "description": "User withdrawal request",
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string",
-          "description": "The user requesting the withdrawal"
-        },
-        "userName": {
-          "type": "string"
-        },
-        "amount": {
-          "type": "number",
-          "description": "The amount requested"
-        },
-        "status": {
-          "type": "string",
-          "enum": ["PENDING", "PROCESSING", "SUCCESS", "FAILED"],
-          "description": "The status of the withdrawal"
-        },
-        "bankName": {
-          "type": "string"
-        },
-        "bankAccount": {
-          "type": "string"
-        },
-        "bankAccountName": {
-          "type": "string"
-        },
-        "adminId": {
-          "type": "string"
-        },
-        "rejectReason": {
-          "type": "string"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "processedAt": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "completedAt": {
-          "type": "string",
-          "format": "date-time"
-        }
-      },
-      "required": ["userId", "userName", "amount", "status", "bankName", "bankAccount", "bankAccountName", "createdAt"]
-    },
-    "Ledger": {
-      "title": "Ledger",
-      "description": "Financial ledger entry",
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string",
-          "description": "The user associated with the ledger entry"
-        },
-        "type": {
-          "type": "string",
-          "enum": ["CREDIT", "DEBIT"],
-          "description": "The type of transaction"
-        },
-        "amount": {
-          "type": "number",
-          "description": "The transaction amount"
-        },
-        "reference": {
-          "type": "string",
-          "description": "The reference ID (e.g., topup_id or transaction_id)"
-        },
-        "description": {
-          "type": "string",
-          "description": "Description of the ledger entry"
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "When the ledger entry was created"
-        }
-      },
-      "required": ["userId", "type", "amount", "reference", "createdAt"]
+        "adminPhone": { "type": "string" },
+        "platformFee": { "type": "number" },
+        "securityFeePerDay": { "type": "number" },
+        "platform_bank_name": { "type": "string" },
+        "platform_account_number": { "type": "string" },
+        "platform_account_holder": { "type": "string" }
+      }
     }
   },
   "firestore": {
@@ -283,24 +177,6 @@
         "$ref": "#/entities/Transaction"
       },
       "description": "Stores escrow transactions"
-    },
-    "/topups/{topupId}": {
-      "schema": {
-        "$ref": "#/entities/TopUp"
-      },
-      "description": "Stores manual top-up requests"
-    },
-    "/withdrawals/{withdrawalId}": {
-      "schema": {
-        "$ref": "#/entities/Withdrawal"
-      },
-      "description": "Stores user withdrawal requests"
-    },
-    "/ledgers/{ledgerId}": {
-      "schema": {
-        "$ref": "#/entities/Ledger"
-      },
-      "description": "Stores financial ledger entries"
     }
   }
 }
