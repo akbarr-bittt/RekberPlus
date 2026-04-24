@@ -150,7 +150,7 @@ export default function JoinTransaction() {
           </div>
           
           <h2 className="text-2xl md:text-3xl font-black text-gray-900 mb-2 tracking-tight">Punya ID Transaksi?</h2>
-          <p className="text-gray-500 mb-8 text-sm md:text-base leading-relaxed">Masukkan ID Transaksi yang diberikan oleh pihak lain untuk bergabung dalam rekber ini.</p>
+          <p className="text-gray-500 mb-8 text-sm md:text-base leading-relaxed">Masukkan ID Transaksi yang diberikan oleh pihak lain untuk bergabung dalam layanan Rekbrio ini.</p>
 
           <form onSubmit={handleJoin} className="space-y-6">
             <div>

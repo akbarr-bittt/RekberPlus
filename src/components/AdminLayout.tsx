@@ -71,7 +71,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="p-8 pb-4">
           <div className="flex items-center gap-3 mb-8 px-2">
             <div>
-              <h1 className="text-lg font-black text-slate-900 tracking-tight leading-none uppercase">REKBER+</h1>
+              <h1 className="text-lg font-black text-slate-900 tracking-tight leading-none uppercase">REKBRIO</h1>
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mt-1">Panel Kontrol</p>
             </div>
           </div>

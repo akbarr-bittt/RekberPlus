@@ -160,7 +160,7 @@ export default function CreateTransaction() {
               </div>
               <div className="flex justify-between text-sm text-blue-800">
                 <span className="flex items-center gap-1">
-                  Biaya Rekber+ (2%)
+                  Biaya Rekbrio (2%)
                   <Info className="w-4 h-4 text-blue-500" />
                 </span>
                 <span>{formatCurrency(fee)}</span>

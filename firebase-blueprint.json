@@ -2,7 +2,7 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "A user of the Rekber+ platform",
+      "description": "A user of the Rekbrio platform",
       "type": "object",
       "properties": {
         "uid": {

@@ -36,9 +36,9 @@ export default function Layout() {
         <div className="px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2 text-blue-600 font-bold text-xl">
             <div className="w-8 h-8 bg-blue-600 text-white rounded-lg flex items-center justify-center">
-              R+
+              R
             </div>
-            Rekber+
+            Rekbrio
           </div>
           <NotificationCenter />
         </div>
@@ -49,9 +49,9 @@ export default function Layout() {
         <div className="p-6 flex items-center justify-between">
           <div className="flex items-center gap-2 text-blue-600 font-bold text-2xl">
             <div className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center">
-              R+
+              R
             </div>
-            Rekber+
+            Rekbrio
           </div>
         </div>
         <div className="px-6 pb-4">

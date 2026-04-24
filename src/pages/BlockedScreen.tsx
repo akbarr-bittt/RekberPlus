@@ -12,7 +12,7 @@ export default function BlockedScreen() {
     const adminPhone = platformSettings?.adminPhone || '+6281234567890';
     const date = format(new Date(), 'yyyy-MM-dd');
     
-    const message = `Halo Admin Rekber+,
+    const message = `Halo Admin Rekbrio,
 
 Saya ingin mengajukan banding.
 
@@ -74,7 +74,7 @@ Terima kasih.`;
         </div>
 
         <div className="mt-8 pt-6 border-t border-gray-100 w-full">
-          <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.3em]">KEAMANAN REKBER+</p>
+          <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.3em]">KEAMANAN REKBRIO</p>
         </div>
       </div>
     </div>

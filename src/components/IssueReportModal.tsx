@@ -35,7 +35,7 @@ export default function IssueReportModal({ isOpen, onClose, transactions }: Issu
 
     const role = selectedTx.buyerId === user.uid ? 'PEMBELI' : 'PENJUAL';
     
-    const message = `Halo Admin Rekber+, saya ingin melaporkan masalah pada transaksi berikut:
+    const message = `Halo Admin Rekbrio, saya ingin melaporkan masalah pada transaksi berikut:
 
 ID Transaksi: ${selectedTx.id}
 Judul: ${selectedTx.title}
@@ -157,7 +157,7 @@ Mohon bantuannya untuk menindaklanjuti masalah ini. Terima kasih.`;
         {/* Footer info */}
         <div className="p-6 bg-gray-50 border-t border-divider">
           <p className="text-[10px] text-gray-400 text-center uppercase tracking-widest font-bold">
-            Keamanan Transaksi Rekber+
+            Keamanan Transaksi Rekbrio
           </p>
         </div>
       </div>

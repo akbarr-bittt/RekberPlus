@@ -47,7 +47,7 @@ export default function AppLockScreen() {
         <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4">
           <ShieldCheck className="w-8 h-8 text-white" />
         </div>
-        <h1 className="text-2xl font-bold text-gray-900">Rekber+ Terkunci</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Rekbrio Terkunci</h1>
         <p className="text-gray-500 mt-2 text-center max-w-xs">Masukkan PIN keamanan Anda untuk membuka aplikasi.</p>
       </div>
 

@@ -18,7 +18,7 @@ const slides = [
   },
   {
     title: "Biaya Terjangkau",
-    description: "Hanya 2% per transaksi. Transaksi di mana saja, bayar lewat Rekber+.",
+    description: "Hanya 2% per transaksi. Transaksi di mana saja, bayar lewat Rekbrio.",
     icon: CreditCard,
     color: "bg-purple-100 text-purple-600"
   }

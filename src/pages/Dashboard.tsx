@@ -97,7 +97,7 @@ export default function Dashboard() {
       <div className="mb-8 flex justify-between items-start gap-4">
         <div className="min-w-0 flex-1">
           <h1 className="text-xl md:text-2xl font-bold text-gray-900 truncate">Halo, {profile?.name?.split(' ')[0]}!</h1>
-          <p className="text-sm md:text-base text-gray-500 truncate">Sistem Rekber aman untuk transaksi Anda.</p>
+          <p className="text-sm md:text-base text-gray-500 truncate">Dana Ditahan, Transaksi Lebih Aman bersama Rekbrio.</p>
         </div>
         <button 
           onClick={() => setShowReportModal(true)}
@@ -179,7 +179,7 @@ export default function Dashboard() {
               <ShieldCheck className="w-8 h-8 text-gray-300 outline outline-4 outline-white" />
             </div>
             <h4 className="text-gray-900 font-bold mb-2 uppercase tracking-tight text-sm">Belum Ada Transaksi</h4>
-            <p className="text-gray-400 text-xs mb-6 px-4">Mulai gunakan Rekber+ untuk transaksi yang lebih aman dan terpercaya.</p>
+            <p className="text-gray-400 text-xs mb-6 px-4">Mulai gunakan Rekbrio untuk transaksi yang lebih aman dan terpercaya.</p>
             <Link to="/create" className="inline-block px-8 py-3 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-blue-200">
               Mulai Sekarang
             </Link>

@@ -48,7 +48,7 @@ export default function Profile() {
         <div className="bg-blue-600 p-6 rounded-2xl text-white shadow-lg overflow-hidden relative">
           <div className="flex items-center gap-2 text-blue-100 mb-2">
             <CreditCard className="w-5 h-5 flex-shrink-0" />
-            <span className="font-bold text-[10px] uppercase tracking-widest">Saldo Rekber+</span>
+            <span className="font-bold text-[10px] uppercase tracking-widest">Saldo Rekbrio</span>
           </div>
           <h3 className="text-2xl md:text-3xl font-black mb-6 break-words tracking-tighter leading-tight">{formatCurrency(profile?.balance || 0)}</h3>
           <div className="flex gap-2">

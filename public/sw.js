@@ -1,10 +1,10 @@
 self.addEventListener('push', function(event) {
-  let data = { title: 'Rekber+', body: 'Ada aktivitas baru di akun Anda.' };
+  let data = { title: 'Rekbrio', body: 'Ada aktivitas baru di akun Anda.' };
   if (event.data) {
     try {
       data = event.data.json();
     } catch (e) {
-      data = { title: 'Rekber+', body: event.data.text() };
+      data = { title: 'Rekbrio', body: event.data.text() };
     }
   }
 

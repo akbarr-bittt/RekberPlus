@@ -1233,7 +1233,7 @@ export default function AdminDashboard() {
                           </div>
                           <div className="col-span-1 space-y-1">
                              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Account Holder</label>
-                             <input type="text" placeholder="REKBER PLUS" value={platformAccountHolder} onChange={e => setPlatformAccountHolder(e.target.value)} className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all" />
+                             <input type="text" placeholder="REKBRIO" value={platformAccountHolder} onChange={e => setPlatformAccountHolder(e.target.value)} className="w-full px-5 py-4 bg-slate-50/50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-500/5 transition-all" />
                           </div>
                        </div>
                        <div className="space-y-1">
@@ -1361,7 +1361,7 @@ export default function AdminDashboard() {
             </div>
 
             <div className="p-4 border-t border-gray-100 bg-gray-50/50 text-center">
-              <p className="text-[9px] text-gray-400 font-black uppercase tracking-[0.3em]">SISTEM PERLINDUNGAN REKBER+</p>
+              <p className="text-[9px] text-gray-400 font-black uppercase tracking-[0.3em]">SISTEM PERLINDUNGAN REKBRIO</p>
             </div>
           </div>
         </div>

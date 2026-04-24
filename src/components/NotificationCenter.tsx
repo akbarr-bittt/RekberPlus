@@ -143,7 +143,7 @@ export default function NotificationCenter() {
               </div>
 
               <div className="p-4 border-t border-divider bg-gray-50/50 text-center">
-                 <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] leading-none">Keamanan & Kepercayaan Rekber+</p>
+                 <p className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em] leading-none">Keamanan & Kepercayaan Rekbrio</p>
               </div>
             </motion.div>
           </>

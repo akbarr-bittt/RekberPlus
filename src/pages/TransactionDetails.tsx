@@ -38,7 +38,7 @@ function PaymentModal({ isOpen, onClose, tx, platformSettings, onConfirmTransfer
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
         <div className="p-4 md:p-6 border-b border-divider flex items-center justify-between bg-gray-50 shrink-0">
-          <h2 className="text-lg md:text-xl font-bold text-gray-900 tracking-tight">Pembayaran Rekber+</h2>
+          <h2 className="text-lg md:text-xl font-bold text-gray-900 tracking-tight">Pembayaran Rekbrio</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors shrink-0">
             <X className="w-5 h-5 md:w-6 h-6 text-gray-500" />
           </button>
@@ -91,7 +91,7 @@ function PaymentModal({ isOpen, onClose, tx, platformSettings, onConfirmTransfer
              <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl border border-divider">
                <AlertCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
                <p className="text-xs text-gray-600 leading-relaxed font-medium">
-                 Silakan transfer sesuai nominal ke rekening Rekber+ di atas melalui ATM/M-Banking. Nominal harus pas agar mudah dicek oleh admin.
+                 Silakan transfer sesuai nominal ke rekening Rekbrio di atas melalui ATM/M-Banking. Nominal harus pas agar mudah dicek oleh admin.
                </p>
              </div>
              
@@ -295,7 +295,7 @@ export default function TransactionDetails() {
 
   const getStatusDisplay = () => {
     switch (tx.status) {
-      case 'waiting_payment': return { color: 'text-orange-600 bg-orange-50', icon: Clock, text: 'MENUNGGU PEMBAYARAN', desc: 'Silakan transfer ke rekening resmi Rekber+ sesuai nominal.' };
+      case 'waiting_payment': return { color: 'text-orange-600 bg-orange-50', icon: Clock, text: 'MENUNGGU PEMBAYARAN', desc: 'Silakan transfer ke rekening resmi Rekbrio sesuai nominal.' };
       case 'waiting_payment_confirmation': return { color: 'text-blue-600 bg-blue-50', icon: Clock, text: 'VERIFIKASI MANUAL', desc: 'Admin sedang mengecek mutasi rekening. Mohon tunggu sebentar.' };
       case 'funds_held': return { color: 'text-green-600 bg-green-50', icon: ShieldCheck, text: 'DANA DITAHAN', desc: 'Pembayaran sudah diterima sistem. Penjual silakan proses pesanan.' };
       case 'processing': return { color: 'text-purple-600 bg-purple-50', icon: Package, text: 'SEDANG DIPROSES', desc: 'Penjual sedang mengerjakan pesanan Anda.' };
@@ -336,7 +336,7 @@ export default function TransactionDetails() {
               <Search className="w-4 h-4 text-blue-600" />
               Menunggu Pihak Lain
             </h3>
-            <p className="text-[11px] md:text-sm text-gray-500 font-medium leading-relaxed">Bagikan ID Transaksi ini kepada {isBuyer ? 'penjual' : 'pembeli'} untuk bergabung dalam rekber ini.</p>
+            <p className="text-[11px] md:text-sm text-gray-500 font-medium leading-relaxed">Bagikan ID Transaksi ini kepada {isBuyer ? 'penjual' : 'pembeli'} untuk bergabung dalam layanan Rekbrio ini.</p>
             <div className="flex items-center gap-2 bg-paper-alt p-3 rounded-xl border border-divider">
               <code className="flex-1 font-mono text-blue-600 font-black text-center text-base md:text-lg select-all break-all">{tx.id}</code>
               <button 

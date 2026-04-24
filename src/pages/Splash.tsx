@@ -10,10 +10,10 @@ export default function Splash() {
         className="flex flex-col items-center"
       >
         <div className="w-24 h-24 bg-white text-blue-600 rounded-2xl flex items-center justify-center text-5xl font-bold mb-6">
-          R+
+          R
         </div>
-        <h1 className="text-white text-3xl font-bold tracking-tight">Rekber+</h1>
-        <p className="text-blue-100 mt-2 font-medium">Transaksi Aman & Terpercaya</p>
+        <h1 className="text-white text-3xl font-bold tracking-tight">Rekbrio</h1>
+        <p className="text-blue-100 mt-2 font-medium">Dana Ditahan, Transaksi Lebih Aman</p>
       </motion.div>
     </div>
   );
